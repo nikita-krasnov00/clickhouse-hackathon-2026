@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* Insight Desk — тёмная тема как базовая (трек C наведёт красоту, C1). */
+:root {
+  --background: #0b0e14;
+  --surface: #11151f;
+  --border: #1f2532;
+  --foreground: #e6e9ef;
+  --muted: #8b93a7;
+  --accent: #f2b035;
+
+  /* Viz-токены (C3/C4). Категориальная палитра валидирована на поверхности
+     #11151f: node validate_palette.js "#3987e5,#199e70,#c98500,#9085e9"
+     --mode dark --surface "#11151f" → ALL CHECKS PASS (worst ΔE 41.3). */
+  --viz-series-1: #3987e5;
+  --viz-series-2: #199e70;
+  --viz-series-3: #c98500;
+  --viz-series-4: #9085e9;
+  --viz-grid: #1c212d;
+  --viz-axis: #2a3040;
+  /* Статусные цвета — зарезервированы, никогда не как series-N. */
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-critical: #d03b3b;
+  /* Зона аномалии — статус critical в виде прозрачной заливки. */
+  --viz-anomaly-fill: rgba(208, 59, 59, 0.12);
+  --viz-anomaly-edge: rgba(208, 59, 59, 0.45);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
