@@ -21,7 +21,9 @@ import {
 import { TimelineCard } from "./TimelineCard";
 import { LeaderboardCard } from "./LeaderboardCard";
 import { VerdictCard } from "./VerdictCard";
-import { HeatmapCard, HistogramCard, NetworkGraphCard } from "./ComingSoonCard";
+import { HistogramCard } from "./HistogramCard";
+import { NetworkGraphCard } from "./NetworkGraphCard";
+import { CalendarHeatmapCard } from "./CalendarHeatmapCard";
 
 type CommonProps = {
   cardId: string;
@@ -36,9 +38,9 @@ type RendererProps<K extends ViewKind> = CommonProps & {
 const RENDERERS = {
   timeline: (p: RendererProps<"timeline">) => <TimelineCard {...p} />,
   leaderboard: (p: RendererProps<"leaderboard">) => <LeaderboardCard {...p} />,
-  histogram: (p: RendererProps<"histogram">) => <HistogramCard spec={p.spec} />,
-  graph: (p: RendererProps<"graph">) => <NetworkGraphCard spec={p.spec} />,
-  heatmap: (p: RendererProps<"heatmap">) => <HeatmapCard spec={p.spec} />,
+  histogram: (p: RendererProps<"histogram">) => <HistogramCard {...p} />,
+  graph: (p: RendererProps<"graph">) => <NetworkGraphCard {...p} />,
+  heatmap: (p: RendererProps<"heatmap">) => <CalendarHeatmapCard {...p} />,
   verdict: (p: RendererProps<"verdict">) => <VerdictCard spec={p.spec} />,
 } satisfies { [K in ViewKind]: (p: RendererProps<K>) => ReactNode };
 

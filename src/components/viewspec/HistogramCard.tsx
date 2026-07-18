@@ -1,0 +1,237 @@
+"use client";
+
+/**
+ * Histogram (C5) — вертикальные бары корзин {label, count}.
+ *
+ * Рукописный SVG в стиле TimelineCard: hairline-сетка, тонкие бары (≤24px)
+ * со скруглённым верхом (4px) и квадратным основанием на базовой линии,
+ * прямые подписи только у экстремума, hover-тултип, хит-таргет — вся полоса
+ * корзины (шире видимого бара). Клик по корзине → ClickContext строго по
+ * семантике ClickTarget on:'bucket' (selectionKeys из label/count).
+ */
+import { useMemo, useState } from "react";
+import type { ClickContext, HistogramSpec } from "@/lib/contracts";
+import { bucketElementFields, buildClickContext, findClickTarget } from "./click";
+
+const VB_W = 640;
+const VB_H = 260;
+const M = { top: 22, right: 8, bottom: 48, left: 48 };
+const BAR_W = 24; // cap толщины бара — «тонкие марки», воздух в полосе
+const CAP_R = 4; // скругление данных-конца (верх), основание квадратное
+
+const numFmt = new Intl.NumberFormat("ru-RU");
+
+/** «Красивый» шаг оси значений: 1/2/5 × 10^n (как в TimelineCard). */
+function niceStep(rough: number): number {
+  const pow = 10 ** Math.floor(Math.log10(Math.max(rough, 1e-9)));
+  const unit = rough / pow;
+  const factor = unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 5 ? 5 : 10;
+  return factor * pow;
+}
+
+/** Путь бара: скруглённый верх (r), квадратное основание. */
+function barPath(x: number, yTop: number, w: number, yBase: number): string {
+  const r = Math.min(CAP_R, Math.max(yBase - yTop, 0), w / 2);
+  return [
+    `M${x},${yBase}`,
+    `L${x},${yTop + r}`,
+    `Q${x},${yTop} ${x + r},${yTop}`,
+    `L${x + w - r},${yTop}`,
+    `Q${x + w},${yTop} ${x + w},${yTop + r}`,
+    `L${x + w},${yBase}`,
+    "Z",
+  ].join(" ");
+}
+
+export function HistogramCard({
+  spec,
+  cardId,
+  onClickContext,
+}: {
+  spec: HistogramSpec;
+  cardId: string;
+  onClickContext?: (ctx: ClickContext) => void;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const bucketTarget = findClickTarget(spec.clicks, "bucket");
+  const clickable = Boolean(bucketTarget && onClickContext);
+
+  const layout = useMemo(() => {
+    if (spec.buckets.length === 0) return null;
+    const vMax = Math.max(...spec.buckets.map((b) => b.count), 1);
+    const step = niceStep(vMax / 4);
+    const yMax = Math.ceil(vMax / step) * step;
+
+    const plotW = VB_W - M.left - M.right;
+    const band = plotW / spec.buckets.length;
+    const y = (v: number) =>
+      VB_H - M.bottom - (v / yMax) * (VB_H - M.top - M.bottom);
+
+    const yTicks: number[] = [];
+    for (let v = 0; v <= yMax; v += step) yTicks.push(v);
+
+    const maxIdx = spec.buckets.reduce(
+      (best, b, i) => (b.count > spec.buckets[best].count ? i : best),
+      0,
+    );
+    return { band, y, yTicks, maxIdx };
+  }, [spec.buckets]);
+
+  if (!layout) {
+    return (
+      <p className="px-1 py-6 text-center text-sm text-muted">Нет данных</p>
+    );
+  }
+  const { band, y, yTicks, maxIdx } = layout;
+  const yBase = VB_H - M.bottom;
+  const barW = Math.min(BAR_W, band * 0.6);
+
+  const fire = (i: number) => {
+    if (!bucketTarget || !onClickContext) return;
+    onClickContext(
+      buildClickContext({
+        cardId,
+        componentKind: "histogram",
+        target: bucketTarget,
+        element: bucketElementFields(spec.buckets[i]),
+      }),
+    );
+  };
+
+  const hovered = hover !== null ? spec.buckets[hover] : null;
+
+  return (
+    <div className="relative">
+      <svg
+        viewBox={`0 0 ${VB_W} ${VB_H}`}
+        className="block w-full"
+        role="img"
+        aria-label={spec.title}
+      >
+        {/* Сетка значений — hairline, рецессивная */}
+        {yTicks.map((v) => (
+          <g key={v}>
+            <line
+              x1={M.left}
+              x2={VB_W - M.right}
+              y1={y(v)}
+              y2={y(v)}
+              stroke={v === 0 ? "var(--viz-axis)" : "var(--viz-grid)"}
+              strokeWidth={1}
+            />
+            <text
+              x={M.left - 8}
+              y={y(v) + 3.5}
+              textAnchor="end"
+              fontSize={10}
+              fill="var(--muted)"
+            >
+              {numFmt.format(v)}
+            </text>
+          </g>
+        ))}
+
+        {/* Бары + подписи корзин + хит-таргеты на всю полосу */}
+        {spec.buckets.map((b, i) => {
+          const cx = M.left + band * i + band / 2;
+          const x0 = cx - barW / 2;
+          const yTop = y(b.count);
+          const isHovered = hover === i;
+          return (
+            <g key={b.label}>
+              <path
+                d={barPath(x0, yTop, barW, yBase)}
+                fill="var(--viz-series-1)"
+                fillOpacity={isHovered ? 1 : 0.85}
+                pointerEvents="none"
+              />
+              {/* Прямая подпись — только у экстремума или под hover (селективно) */}
+              {(i === maxIdx || isHovered) && (
+                <text
+                  x={cx}
+                  y={yTop - 6}
+                  textAnchor="middle"
+                  fontSize={10}
+                  fontWeight={600}
+                  fill="var(--foreground)"
+                >
+                  {numFmt.format(b.count)}
+                </text>
+              )}
+              <text
+                x={cx}
+                y={yBase + 16}
+                textAnchor="middle"
+                fontSize={10}
+                fill="var(--muted)"
+              >
+                {b.label}
+              </text>
+              {/* Хит-таргет: вся полоса корзины, выше видимого бара */}
+              <rect
+                x={M.left + band * i}
+                y={M.top}
+                width={band}
+                height={VB_H - M.top - M.bottom}
+                fill="transparent"
+                className={clickable ? "cursor-pointer" : undefined}
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                aria-label={
+                  clickable
+                    ? `${b.label} · ${numFmt.format(b.count)}${bucketTarget?.label ? ` — ${bucketTarget.label}` : ""}`
+                    : undefined
+                }
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)}
+                onFocus={() => setHover(i)}
+                onBlur={() => setHover(null)}
+                onClick={() => fire(i)}
+                onKeyDown={(e) => {
+                  if (clickable && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    fire(i);
+                  }
+                }}
+              />
+            </g>
+          );
+        })}
+
+        {/* Подпись оси корзин */}
+        <text
+          x={M.left + (VB_W - M.left - M.right) / 2}
+          y={VB_H - 8}
+          textAnchor="middle"
+          fontSize={10}
+          fill="var(--muted)"
+          opacity={0.8}
+        >
+          {spec.bucketLabel}
+        </text>
+      </svg>
+
+      {/* Тултип: значение — главное, подпись — вторичная */}
+      {hover !== null && hovered && (
+        <div
+          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-background px-2.5 py-1.5 shadow-lg"
+          style={{
+            left: `${((M.left + band * hover + band / 2) / VB_W) * 100}%`,
+            top: `${(y(hovered.count) / VB_H) * 100}%`,
+            marginTop: "-10px",
+          }}
+        >
+          <div className="text-sm font-semibold whitespace-nowrap">
+            {numFmt.format(hovered.count)}
+          </div>
+          <div className="text-xs whitespace-nowrap text-muted">{hovered.label}</div>
+          {clickable && bucketTarget?.label && (
+            <div className="mt-0.5 text-[10px] whitespace-nowrap text-accent">
+              {bucketTarget.label} →
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

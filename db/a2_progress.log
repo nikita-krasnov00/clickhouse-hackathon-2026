@@ -1578,3 +1578,529 @@
 2026-07-18T15:55:54Z	LOADED	C-prsample-20240208	rows=75051	elapsed=8s	src_exec=417ms
 2026-07-18T15:55:54Z	DONE	C-prsample-20240208
 2026-07-18T15:55:54Z	START	C-prsample-20240209 (attempt 1, http)
+2026-07-18T15:55:58Z	LOADED	B-2026-05	rows=23399	elapsed=7s	src_exec=243ms
+2026-07-18T15:55:58Z	DONE	B-2026-05
+2026-07-18T15:56:00Z	LOADED	C-prsample-20240209	rows=71385	elapsed=6s	src_exec=432ms
+2026-07-18T15:56:00Z	DONE	C-prsample-20240209
+2026-07-18T15:56:01Z	START	B-2026-06 (attempt 1, http)
+2026-07-18T15:56:01Z	START	C-prsample-20240210 (attempt 1, http)
+2026-07-18T15:56:05Z	LOADED	B-2026-06	rows=7356	elapsed=6s	src_exec=222ms
+2026-07-18T15:56:05Z	DONE	B-2026-06
+2026-07-18T15:56:07Z	LOADED	C-prsample-20240210	rows=43003	elapsed=7s	src_exec=398ms
+2026-07-18T15:56:07Z	DONE	C-prsample-20240210
+2026-07-18T15:56:07Z	START	C-prsample-20240211 (attempt 1, http)
+2026-07-18T15:56:08Z	PHASE-B	complete: 16921935 actor-star rows
+2026-07-18T15:56:09Z	START	C-prsample-20240212 (attempt 1, http)
+2026-07-18T15:56:13Z	LOADED	C-prsample-20240211	rows=44419	elapsed=6s	src_exec=305ms
+2026-07-18T15:56:13Z	DONE	C-prsample-20240211
+2026-07-18T15:56:13Z	START	C-prsample-20240213 (attempt 1, http)
+2026-07-18T15:56:15Z	LOADED	C-prsample-20240212	rows=90159	elapsed=7s	src_exec=354ms
+2026-07-18T15:56:15Z	DONE	C-prsample-20240212
+2026-07-18T15:56:15Z	START	C-prsample-20240214 (attempt 1, http)
+2026-07-18T15:56:19Z	LOADED	C-prsample-20240213	rows=76670	elapsed=6s	src_exec=325ms
+2026-07-18T15:56:19Z	DONE	C-prsample-20240213
+2026-07-18T15:56:20Z	START	C-prsample-20240215 (attempt 1, http)
+2026-07-18T15:56:21Z	LOADED	C-prsample-20240214	rows=75649	elapsed=6s	src_exec=353ms
+2026-07-18T15:56:21Z	DONE	C-prsample-20240214
+2026-07-18T15:56:22Z	START	C-prsample-20240216 (attempt 1, http)
+2026-07-18T15:56:26Z	LOADED	C-prsample-20240215	rows=78169	elapsed=7s	src_exec=326ms
+2026-07-18T15:56:26Z	DONE	C-prsample-20240215
+2026-07-18T15:56:27Z	START	C-prsample-20240217 (attempt 1, http)
+2026-07-18T15:56:28Z	LOADED	C-prsample-20240216	rows=73107	elapsed=7s	src_exec=357ms
+2026-07-18T15:56:28Z	DONE	C-prsample-20240216
+2026-07-18T15:56:28Z	START	C-prsample-20240218 (attempt 1, http)
+2026-07-18T15:56:32Z	LOADED	C-prsample-20240217	rows=49735	elapsed=6s	src_exec=357ms
+2026-07-18T15:56:32Z	DONE	C-prsample-20240217
+2026-07-18T15:56:33Z	START	C-prsample-20240219 (attempt 1, http)
+2026-07-18T15:56:33Z	LOADED	C-prsample-20240218	rows=45940	elapsed=5s	src_exec=360ms
+2026-07-18T15:56:33Z	DONE	C-prsample-20240218
+2026-07-18T15:56:34Z	START	C-prsample-20240220 (attempt 1, http)
+2026-07-18T15:56:38Z	RETRY	C-prsample-20240219	attempt 1 failed, sleeping 10s
+2026-07-18T15:56:39Z	RETRY	C-prsample-20240220	attempt 1 failed, sleeping 10s
+2026-07-18T15:56:49Z	START	C-prsample-20240219 (attempt 2, http)
+2026-07-18T15:56:49Z	START	C-prsample-20240220 (attempt 2, http)
+2026-07-18T15:56:50Z	RETRY	C-prsample-20240219	attempt 2 failed, sleeping 20s
+2026-07-18T15:56:50Z	RETRY	C-prsample-20240220	attempt 2 failed, sleeping 20s
+2026-07-18T15:57:10Z	START	C-prsample-20240219 (attempt 3, http)
+2026-07-18T15:57:10Z	START	C-prsample-20240220 (attempt 3, http)
+2026-07-18T15:57:11Z	RETRY	C-prsample-20240219	attempt 3 failed, sleeping 30s
+2026-07-18T15:57:11Z	RETRY	C-prsample-20240220	attempt 3 failed, sleeping 30s
+2026-07-18T15:57:41Z	START	C-prsample-20240219 (attempt 4, http)
+2026-07-18T15:57:41Z	START	C-prsample-20240220 (attempt 4, http)
+2026-07-18T15:57:42Z	RETRY	C-prsample-20240219	attempt 4 failed, sleeping 40s
+2026-07-18T15:57:42Z	RETRY	C-prsample-20240220	attempt 4 failed, sleeping 40s
+2026-07-18T15:58:23Z	START	C-prsample-20240219 (attempt 5, http)
+2026-07-18T15:58:23Z	START	C-prsample-20240220 (attempt 5, http)
+2026-07-18T15:58:24Z	RETRY	C-prsample-20240219	attempt 5 failed, sleeping 50s
+2026-07-18T15:58:24Z	RETRY	C-prsample-20240220	attempt 5 failed, sleeping 50s
+2026-07-18T15:59:14Z	FAILED	C-prsample-20240219	giving up after 5 attempts
+2026-07-18T15:59:14Z	FAILED	C-prsample-20240220	giving up after 5 attempts
+2026-07-18T15:59:14Z	RUN	a2_run_all FINISHED WITH ERRORS — re-run to resume
+2026-07-18T15:59:31Z	RUN	a2_run_all started
+2026-07-18T15:59:32Z	TABLE	github.github_events ready
+2026-07-18T15:59:32Z	TABLE	current row count: 96143378
+2026-07-18T15:59:32Z	SKIP	A-repo-lavague-ai_LaVague	already done
+2026-07-18T15:59:32Z	SKIP	A-repo-Zejun-Yang_AniPortrait	already done
+2026-07-18T15:59:32Z	SKIP	A-repo-deepseek-ai_DeepSeek-VL	already done
+2026-07-18T15:59:32Z	SKIP	A-repo-solidSpoon_DashPlayer	already done
+2026-07-18T15:59:32Z	SKIP	A-repo-OpenInterpreter_01	already done
+2026-07-18T15:59:33Z	PHASE-A	complete: 32630 rows for target repos
+2026-07-18T15:59:34Z	PHASE-B	actor set: 20334 actors
+2026-07-18T15:59:34Z	PHASE-C-watch	complete (2024-01-01..2024-07-01)
+2026-07-18T15:59:34Z	START	C-prsample-20240415 (attempt 1, http)
+2026-07-18T15:59:34Z	PHASE-C-create	complete (2024-01-01..2024-07-01)
+2026-07-18T15:59:35Z	PHASE-C-fork	complete (2024-01-01..2024-07-01)
+2026-07-18T15:59:35Z	RETRY	C-prsample-20240415	attempt 1 failed, sleeping 10s
+2026-07-18T15:59:36Z	PHASE-B	complete: 16921935 actor-star rows
+2026-07-18T15:59:37Z	START	C-prsample-20240219 (attempt 1, http)
+2026-07-18T15:59:38Z	RETRY	C-prsample-20240219	attempt 1 failed, sleeping 10s
+2026-07-18T15:59:45Z	START	C-prsample-20240415 (attempt 2, http)
+2026-07-18T15:59:46Z	RETRY	C-prsample-20240415	attempt 2 failed, sleeping 20s
+2026-07-18T15:59:48Z	START	C-prsample-20240219 (attempt 2, http)
+2026-07-18T15:59:49Z	RETRY	C-prsample-20240219	attempt 2 failed, sleeping 20s
+2026-07-18T16:00:07Z	START	C-prsample-20240415 (attempt 3, http)
+2026-07-18T16:00:08Z	RETRY	C-prsample-20240415	attempt 3 failed, sleeping 30s
+2026-07-18T16:00:09Z	START	C-prsample-20240219 (attempt 3, http)
+2026-07-18T16:00:10Z	RETRY	C-prsample-20240219	attempt 3 failed, sleeping 30s
+2026-07-18T16:00:38Z	START	C-prsample-20240415 (attempt 4, http)
+2026-07-18T16:00:40Z	START	C-prsample-20240219 (attempt 4, http)
+2026-07-18T16:00:50Z	RETRY	C-prsample-20240415	attempt 4 failed, sleeping 40s
+2026-07-18T16:00:53Z	RETRY	C-prsample-20240219	attempt 4 failed, sleeping 40s
+2026-07-18T16:01:30Z	START	C-prsample-20240415 (attempt 5, http)
+2026-07-18T16:01:33Z	START	C-prsample-20240219 (attempt 5, http)
+2026-07-18T16:01:37Z	LOADED	C-prsample-20240415	rows=104183	elapsed=7s	src_exec=170ms
+2026-07-18T16:01:37Z	DONE	C-prsample-20240415
+2026-07-18T16:01:37Z	START	C-prsample-20240416 (attempt 1, http)
+2026-07-18T16:01:41Z	LOADED	C-prsample-20240219	rows=90618	elapsed=8s	src_exec=133ms
+2026-07-18T16:01:41Z	DONE	C-prsample-20240219
+2026-07-18T16:01:41Z	START	C-prsample-20240220 (attempt 1, http)
+2026-07-18T16:01:44Z	LOADED	C-prsample-20240416	rows=87841	elapsed=7s	src_exec=360ms
+2026-07-18T16:01:44Z	DONE	C-prsample-20240416
+2026-07-18T16:01:44Z	START	C-prsample-20240417 (attempt 1, http)
+2026-07-18T16:01:47Z	LOADED	C-prsample-20240220	rows=81613	elapsed=6s	src_exec=123ms
+2026-07-18T16:01:47Z	DONE	C-prsample-20240220
+2026-07-18T16:01:47Z	START	C-prsample-20240221 (attempt 1, http)
+2026-07-18T16:01:50Z	LOADED	C-prsample-20240417	rows=84796	elapsed=6s	src_exec=341ms
+2026-07-18T16:01:50Z	DONE	C-prsample-20240417
+2026-07-18T16:01:51Z	START	C-prsample-20240418 (attempt 1, http)
+2026-07-18T16:01:53Z	LOADED	C-prsample-20240221	rows=85322	elapsed=6s	src_exec=357ms
+2026-07-18T16:01:53Z	DONE	C-prsample-20240221
+2026-07-18T16:01:54Z	START	C-prsample-20240222 (attempt 1, http)
+2026-07-18T16:01:57Z	LOADED	C-prsample-20240418	rows=82572	elapsed=7s	src_exec=347ms
+2026-07-18T16:01:57Z	DONE	C-prsample-20240418
+2026-07-18T16:01:57Z	START	C-prsample-20240419 (attempt 1, http)
+2026-07-18T16:02:00Z	LOADED	C-prsample-20240222	rows=78809	elapsed=7s	src_exec=332ms
+2026-07-18T16:02:00Z	DONE	C-prsample-20240222
+2026-07-18T16:02:00Z	START	C-prsample-20240223 (attempt 1, http)
+2026-07-18T16:02:04Z	LOADED	C-prsample-20240419	rows=80250	elapsed=7s	src_exec=357ms
+2026-07-18T16:02:04Z	DONE	C-prsample-20240419
+2026-07-18T16:02:05Z	START	C-prsample-20240420 (attempt 1, http)
+2026-07-18T16:02:06Z	LOADED	C-prsample-20240223	rows=71641	elapsed=6s	src_exec=359ms
+2026-07-18T16:02:06Z	DONE	C-prsample-20240223
+2026-07-18T16:02:07Z	START	C-prsample-20240224 (attempt 1, http)
+2026-07-18T16:02:10Z	LOADED	C-prsample-20240420	rows=46522	elapsed=6s	src_exec=339ms
+2026-07-18T16:02:10Z	DONE	C-prsample-20240420
+2026-07-18T16:02:10Z	START	C-prsample-20240421 (attempt 1, http)
+2026-07-18T16:02:12Z	LOADED	C-prsample-20240224	rows=44718	elapsed=6s	src_exec=361ms
+2026-07-18T16:02:12Z	DONE	C-prsample-20240224
+2026-07-18T16:02:12Z	START	C-prsample-20240225 (attempt 1, http)
+2026-07-18T16:02:15Z	LOADED	C-prsample-20240421	rows=46518	elapsed=5s	src_exec=309ms
+2026-07-18T16:02:15Z	DONE	C-prsample-20240421
+2026-07-18T16:02:16Z	START	C-prsample-20240422 (attempt 1, http)
+2026-07-18T16:02:17Z	LOADED	C-prsample-20240225	rows=48063	elapsed=5s	src_exec=337ms
+2026-07-18T16:02:17Z	DONE	C-prsample-20240225
+2026-07-18T16:02:18Z	START	C-prsample-20240226 (attempt 1, http)
+2026-07-18T16:02:23Z	LOADED	C-prsample-20240422	rows=97856	elapsed=8s	src_exec=364ms
+2026-07-18T16:02:23Z	DONE	C-prsample-20240422
+2026-07-18T16:02:23Z	START	C-prsample-20240423 (attempt 1, http)
+2026-07-18T16:02:25Z	LOADED	C-prsample-20240226	rows=92153	elapsed=8s	src_exec=348ms
+2026-07-18T16:02:25Z	DONE	C-prsample-20240226
+2026-07-18T16:02:25Z	START	C-prsample-20240227 (attempt 1, http)
+2026-07-18T16:02:30Z	LOADED	C-prsample-20240423	rows=90691	elapsed=7s	src_exec=342ms
+2026-07-18T16:02:30Z	DONE	C-prsample-20240423
+2026-07-18T16:02:30Z	START	C-prsample-20240424 (attempt 1, http)
+2026-07-18T16:02:32Z	LOADED	C-prsample-20240227	rows=84968	elapsed=7s	src_exec=360ms
+2026-07-18T16:02:32Z	DONE	C-prsample-20240227
+2026-07-18T16:02:32Z	START	C-prsample-20240228 (attempt 1, http)
+2026-07-18T16:02:37Z	LOADED	C-prsample-20240424	rows=82487	elapsed=7s	src_exec=337ms
+2026-07-18T16:02:37Z	DONE	C-prsample-20240424
+2026-07-18T16:02:37Z	START	C-prsample-20240425 (attempt 1, http)
+2026-07-18T16:02:38Z	LOADED	C-prsample-20240228	rows=81893	elapsed=6s	src_exec=360ms
+2026-07-18T16:02:38Z	DONE	C-prsample-20240228
+2026-07-18T16:02:39Z	START	C-prsample-20240229 (attempt 1, http)
+2026-07-18T16:02:44Z	LOADED	C-prsample-20240425	rows=82671	elapsed=7s	src_exec=356ms
+2026-07-18T16:02:44Z	DONE	C-prsample-20240425
+2026-07-18T16:02:45Z	START	C-prsample-20240426 (attempt 1, http)
+2026-07-18T16:02:45Z	LOADED	C-prsample-20240229	rows=79621	elapsed=7s	src_exec=363ms
+2026-07-18T16:02:45Z	DONE	C-prsample-20240229
+2026-07-18T16:02:46Z	START	C-prsample-20240301 (attempt 1, http)
+2026-07-18T16:02:51Z	LOADED	C-prsample-20240426	rows=77017	elapsed=7s	src_exec=351ms
+2026-07-18T16:02:51Z	DONE	C-prsample-20240426
+2026-07-18T16:02:51Z	START	C-prsample-20240427 (attempt 1, http)
+2026-07-18T16:02:52Z	LOADED	C-prsample-20240301	rows=86882	elapsed=7s	src_exec=341ms
+2026-07-18T16:02:52Z	DONE	C-prsample-20240301
+2026-07-18T16:02:52Z	START	C-prsample-20240302 (attempt 1, http)
+2026-07-18T16:02:57Z	LOADED	C-prsample-20240427	rows=45439	elapsed=6s	src_exec=360ms
+2026-07-18T16:02:57Z	DONE	C-prsample-20240427
+2026-07-18T16:02:57Z	START	C-prsample-20240428 (attempt 1, http)
+2026-07-18T16:02:58Z	LOADED	C-prsample-20240302	rows=50224	elapsed=6s	src_exec=352ms
+2026-07-18T16:02:58Z	DONE	C-prsample-20240302
+2026-07-18T16:02:59Z	START	C-prsample-20240303 (attempt 1, http)
+2026-07-18T16:03:03Z	LOADED	C-prsample-20240428	rows=45559	elapsed=6s	src_exec=325ms
+2026-07-18T16:03:03Z	DONE	C-prsample-20240428
+2026-07-18T16:03:03Z	START	C-prsample-20240429 (attempt 1, http)
+2026-07-18T16:03:04Z	LOADED	C-prsample-20240303	rows=46182	elapsed=6s	src_exec=358ms
+2026-07-18T16:03:04Z	DONE	C-prsample-20240303
+2026-07-18T16:03:04Z	START	C-prsample-20240304 (attempt 1, http)
+2026-07-18T16:03:10Z	LOADED	C-prsample-20240429	rows=100025	elapsed=7s	src_exec=335ms
+2026-07-18T16:03:10Z	DONE	C-prsample-20240429
+2026-07-18T16:03:10Z	START	C-prsample-20240430 (attempt 1, http)
+2026-07-18T16:03:11Z	LOADED	C-prsample-20240304	rows=100407	elapsed=7s	src_exec=368ms
+2026-07-18T16:03:11Z	DONE	C-prsample-20240304
+2026-07-18T16:03:12Z	START	C-prsample-20240305 (attempt 1, http)
+2026-07-18T16:03:17Z	LOADED	C-prsample-20240430	rows=80031	elapsed=7s	src_exec=353ms
+2026-07-18T16:03:17Z	DONE	C-prsample-20240430
+2026-07-18T16:03:18Z	START	C-prsample-20240501 (attempt 1, http)
+2026-07-18T16:03:18Z	LOADED	C-prsample-20240305	rows=83863	elapsed=7s	src_exec=349ms
+2026-07-18T16:03:18Z	DONE	C-prsample-20240305
+2026-07-18T16:03:19Z	START	C-prsample-20240306 (attempt 1, http)
+2026-07-18T16:03:24Z	LOADED	C-prsample-20240501	rows=84889	elapsed=7s	src_exec=341ms
+2026-07-18T16:03:24Z	DONE	C-prsample-20240501
+2026-07-18T16:03:25Z	START	C-prsample-20240502 (attempt 1, http)
+2026-07-18T16:03:26Z	LOADED	C-prsample-20240306	rows=83232	elapsed=8s	src_exec=351ms
+2026-07-18T16:03:26Z	DONE	C-prsample-20240306
+2026-07-18T16:03:26Z	START	C-prsample-20240307 (attempt 1, http)
+2026-07-18T16:03:31Z	LOADED	C-prsample-20240502	rows=83681	elapsed=7s	src_exec=338ms
+2026-07-18T16:03:31Z	DONE	C-prsample-20240502
+2026-07-18T16:03:32Z	START	C-prsample-20240503 (attempt 1, http)
+2026-07-18T16:03:32Z	LOADED	C-prsample-20240307	rows=81471	elapsed=6s	src_exec=361ms
+2026-07-18T16:03:32Z	DONE	C-prsample-20240307
+2026-07-18T16:03:33Z	START	C-prsample-20240308 (attempt 1, http)
+2026-07-18T16:03:39Z	LOADED	C-prsample-20240503	rows=75239	elapsed=8s	src_exec=360ms
+2026-07-18T16:03:39Z	DONE	C-prsample-20240503
+2026-07-18T16:03:39Z	START	C-prsample-20240504 (attempt 1, http)
+2026-07-18T16:03:39Z	LOADED	C-prsample-20240308	rows=71144	elapsed=7s	src_exec=363ms
+2026-07-18T16:03:39Z	DONE	C-prsample-20240308
+2026-07-18T16:03:40Z	START	C-prsample-20240309 (attempt 1, http)
+2026-07-18T16:03:45Z	LOADED	C-prsample-20240504	rows=45470	elapsed=6s	src_exec=366ms
+2026-07-18T16:03:45Z	DONE	C-prsample-20240504
+2026-07-18T16:03:45Z	START	C-prsample-20240505 (attempt 1, http)
+2026-07-18T16:03:45Z	LOADED	C-prsample-20240309	rows=45345	elapsed=6s	src_exec=338ms
+2026-07-18T16:03:45Z	DONE	C-prsample-20240309
+2026-07-18T16:03:46Z	START	C-prsample-20240310 (attempt 1, http)
+2026-07-18T16:03:50Z	LOADED	C-prsample-20240505	rows=46958	elapsed=5s	src_exec=353ms
+2026-07-18T16:03:50Z	DONE	C-prsample-20240505
+2026-07-18T16:03:51Z	START	C-prsample-20240506 (attempt 1, http)
+2026-07-18T16:03:51Z	LOADED	C-prsample-20240310	rows=44142	elapsed=6s	src_exec=354ms
+2026-07-18T16:03:51Z	DONE	C-prsample-20240310
+2026-07-18T16:03:52Z	START	C-prsample-20240311 (attempt 1, http)
+2026-07-18T16:04:02Z	LOADED	C-prsample-20240506	rows=102440	elapsed=12s	src_exec=365ms
+2026-07-18T16:04:02Z	DONE	C-prsample-20240506
+2026-07-18T16:04:03Z	START	C-prsample-20240507 (attempt 1, http)
+2026-07-18T16:04:03Z	LOADED	C-prsample-20240311	rows=96482	elapsed=12s	src_exec=2820ms
+2026-07-18T16:04:03Z	DONE	C-prsample-20240311
+2026-07-18T16:04:04Z	START	C-prsample-20240312 (attempt 1, http)
+2026-07-18T16:04:09Z	LOADED	C-prsample-20240507	rows=89416	elapsed=7s	src_exec=347ms
+2026-07-18T16:04:09Z	DONE	C-prsample-20240507
+2026-07-18T16:04:10Z	START	C-prsample-20240508 (attempt 1, http)
+2026-07-18T16:04:10Z	LOADED	C-prsample-20240312	rows=88550	elapsed=7s	src_exec=375ms
+2026-07-18T16:04:10Z	DONE	C-prsample-20240312
+2026-07-18T16:04:11Z	START	C-prsample-20240313 (attempt 1, http)
+2026-07-18T16:04:17Z	LOADED	C-prsample-20240508	rows=80236	elapsed=7s	src_exec=352ms
+2026-07-18T16:04:17Z	DONE	C-prsample-20240508
+2026-07-18T16:04:17Z	START	C-prsample-20240509 (attempt 1, http)
+2026-07-18T16:04:18Z	LOADED	C-prsample-20240313	rows=85414	elapsed=8s	src_exec=370ms
+2026-07-18T16:04:18Z	DONE	C-prsample-20240313
+2026-07-18T16:04:18Z	START	C-prsample-20240314 (attempt 1, http)
+2026-07-18T16:04:24Z	LOADED	C-prsample-20240509	rows=77285	elapsed=7s	src_exec=337ms
+2026-07-18T16:04:24Z	DONE	C-prsample-20240509
+2026-07-18T16:04:24Z	START	C-prsample-20240510 (attempt 1, http)
+2026-07-18T16:04:25Z	LOADED	C-prsample-20240314	rows=80977	elapsed=7s	src_exec=361ms
+2026-07-18T16:04:25Z	DONE	C-prsample-20240314
+2026-07-18T16:04:25Z	START	C-prsample-20240315 (attempt 1, http)
+2026-07-18T16:04:31Z	LOADED	C-prsample-20240510	rows=77020	elapsed=7s	src_exec=339ms
+2026-07-18T16:04:31Z	DONE	C-prsample-20240510
+2026-07-18T16:04:31Z	START	C-prsample-20240511 (attempt 1, http)
+2026-07-18T16:04:32Z	LOADED	C-prsample-20240315	rows=83387	elapsed=7s	src_exec=1036ms
+2026-07-18T16:04:32Z	DONE	C-prsample-20240315
+2026-07-18T16:04:32Z	START	C-prsample-20240316 (attempt 1, http)
+2026-07-18T16:04:37Z	LOADED	C-prsample-20240511	rows=45599	elapsed=6s	src_exec=358ms
+2026-07-18T16:04:37Z	DONE	C-prsample-20240511
+2026-07-18T16:04:37Z	START	C-prsample-20240512 (attempt 1, http)
+2026-07-18T16:04:38Z	LOADED	C-prsample-20240316	rows=58313	elapsed=6s	src_exec=351ms
+2026-07-18T16:04:38Z	DONE	C-prsample-20240316
+2026-07-18T16:04:38Z	START	C-prsample-20240317 (attempt 1, http)
+2026-07-18T16:04:42Z	LOADED	C-prsample-20240512	rows=41516	elapsed=5s	src_exec=315ms
+2026-07-18T16:04:42Z	DONE	C-prsample-20240512
+2026-07-18T16:04:43Z	START	C-prsample-20240513 (attempt 1, http)
+2026-07-18T16:04:44Z	LOADED	C-prsample-20240317	rows=48854	elapsed=6s	src_exec=362ms
+2026-07-18T16:04:44Z	DONE	C-prsample-20240317
+2026-07-18T16:04:44Z	START	C-prsample-20240318 (attempt 1, http)
+2026-07-18T16:04:50Z	LOADED	C-prsample-20240513	rows=102247	elapsed=8s	src_exec=335ms
+2026-07-18T16:04:50Z	DONE	C-prsample-20240513
+2026-07-18T16:04:50Z	START	C-prsample-20240514 (attempt 1, http)
+2026-07-18T16:04:51Z	LOADED	C-prsample-20240318	rows=103252	elapsed=7s	src_exec=330ms
+2026-07-18T16:04:51Z	DONE	C-prsample-20240318
+2026-07-18T16:04:52Z	START	C-prsample-20240319 (attempt 1, http)
+2026-07-18T16:05:05Z	LOADED	C-prsample-20240514	rows=83280	elapsed=15s	src_exec=386ms
+2026-07-18T16:05:05Z	DONE	C-prsample-20240514
+2026-07-18T16:05:05Z	START	C-prsample-20240515 (attempt 1, http)
+2026-07-18T16:05:07Z	LOADED	C-prsample-20240319	rows=90083	elapsed=16s	src_exec=8356ms
+2026-07-18T16:05:07Z	DONE	C-prsample-20240319
+2026-07-18T16:05:07Z	START	C-prsample-20240320 (attempt 1, http)
+2026-07-18T16:05:12Z	LOADED	C-prsample-20240515	rows=82404	elapsed=7s	src_exec=342ms
+2026-07-18T16:05:12Z	DONE	C-prsample-20240515
+2026-07-18T16:05:13Z	START	C-prsample-20240516 (attempt 1, http)
+2026-07-18T16:05:14Z	LOADED	C-prsample-20240320	rows=87918	elapsed=7s	src_exec=364ms
+2026-07-18T16:05:14Z	DONE	C-prsample-20240320
+2026-07-18T16:05:14Z	START	C-prsample-20240321 (attempt 1, http)
+2026-07-18T16:05:20Z	LOADED	C-prsample-20240516	rows=86084	elapsed=8s	src_exec=363ms
+2026-07-18T16:05:20Z	DONE	C-prsample-20240516
+2026-07-18T16:05:20Z	START	C-prsample-20240517 (attempt 1, http)
+2026-07-18T16:05:21Z	LOADED	C-prsample-20240321	rows=85449	elapsed=7s	src_exec=381ms
+2026-07-18T16:05:21Z	DONE	C-prsample-20240321
+2026-07-18T16:05:22Z	START	C-prsample-20240322 (attempt 1, http)
+2026-07-18T16:05:27Z	LOADED	C-prsample-20240517	rows=76753	elapsed=7s	src_exec=339ms
+2026-07-18T16:05:27Z	DONE	C-prsample-20240517
+2026-07-18T16:05:28Z	START	C-prsample-20240518 (attempt 1, http)
+2026-07-18T16:05:28Z	LOADED	C-prsample-20240322	rows=79842	elapsed=7s	src_exec=355ms
+2026-07-18T16:05:28Z	DONE	C-prsample-20240322
+2026-07-18T16:05:28Z	START	C-prsample-20240323 (attempt 1, http)
+2026-07-18T16:05:33Z	LOADED	C-prsample-20240518	rows=44479	elapsed=6s	src_exec=338ms
+2026-07-18T16:05:33Z	DONE	C-prsample-20240518
+2026-07-18T16:05:33Z	START	C-prsample-20240519 (attempt 1, http)
+2026-07-18T16:05:34Z	LOADED	C-prsample-20240323	rows=51789	elapsed=6s	src_exec=356ms
+2026-07-18T16:05:34Z	DONE	C-prsample-20240323
+2026-07-18T16:05:35Z	START	C-prsample-20240324 (attempt 1, http)
+2026-07-18T16:05:38Z	LOADED	C-prsample-20240519	rows=45118	elapsed=5s	src_exec=326ms
+2026-07-18T16:05:38Z	DONE	C-prsample-20240519
+2026-07-18T16:05:39Z	START	C-prsample-20240520 (attempt 1, http)
+2026-07-18T16:05:40Z	LOADED	C-prsample-20240324	rows=49866	elapsed=6s	src_exec=392ms
+2026-07-18T16:05:40Z	DONE	C-prsample-20240324
+2026-07-18T16:05:41Z	START	C-prsample-20240325 (attempt 1, http)
+2026-07-18T16:05:46Z	LOADED	C-prsample-20240520	rows=92044	elapsed=8s	src_exec=327ms
+2026-07-18T16:05:46Z	DONE	C-prsample-20240520
+2026-07-18T16:05:46Z	START	C-prsample-20240521 (attempt 1, http)
+2026-07-18T16:05:47Z	LOADED	C-prsample-20240325	rows=100849	elapsed=7s	src_exec=359ms
+2026-07-18T16:05:47Z	DONE	C-prsample-20240325
+2026-07-18T16:05:48Z	START	C-prsample-20240326 (attempt 1, http)
+2026-07-18T16:05:54Z	LOADED	C-prsample-20240521	rows=89153	elapsed=7s	src_exec=345ms
+2026-07-18T16:05:54Z	DONE	C-prsample-20240521
+2026-07-18T16:05:54Z	START	C-prsample-20240522 (attempt 1, http)
+2026-07-18T16:05:54Z	LOADED	C-prsample-20240326	rows=88824	elapsed=7s	src_exec=379ms
+2026-07-18T16:05:54Z	DONE	C-prsample-20240326
+2026-07-18T16:05:55Z	START	C-prsample-20240327 (attempt 1, http)
+2026-07-18T16:06:01Z	LOADED	C-prsample-20240522	rows=84936	elapsed=7s	src_exec=354ms
+2026-07-18T16:06:01Z	DONE	C-prsample-20240522
+2026-07-18T16:06:01Z	LOADED	C-prsample-20240327	rows=83236	elapsed=7s	src_exec=379ms
+2026-07-18T16:06:01Z	DONE	C-prsample-20240327
+2026-07-18T16:06:01Z	START	C-prsample-20240523 (attempt 1, http)
+2026-07-18T16:06:01Z	START	C-prsample-20240328 (attempt 1, http)
+2026-07-18T16:06:08Z	LOADED	C-prsample-20240523	rows=82028	elapsed=7s	src_exec=368ms
+2026-07-18T16:06:08Z	DONE	C-prsample-20240523
+2026-07-18T16:06:08Z	START	C-prsample-20240524 (attempt 1, http)
+2026-07-18T16:06:08Z	LOADED	C-prsample-20240328	rows=82028	elapsed=7s	src_exec=544ms
+2026-07-18T16:06:08Z	DONE	C-prsample-20240328
+2026-07-18T16:06:09Z	START	C-prsample-20240329 (attempt 1, http)
+2026-07-18T16:06:15Z	LOADED	C-prsample-20240524	rows=66878	elapsed=7s	src_exec=354ms
+2026-07-18T16:06:15Z	DONE	C-prsample-20240524
+2026-07-18T16:06:15Z	START	C-prsample-20240525 (attempt 1, http)
+2026-07-18T16:06:15Z	LOADED	C-prsample-20240329	rows=67992	elapsed=7s	src_exec=389ms
+2026-07-18T16:06:15Z	DONE	C-prsample-20240329
+2026-07-18T16:06:16Z	START	C-prsample-20240330 (attempt 1, http)
+2026-07-18T16:06:21Z	LOADED	C-prsample-20240525	rows=47456	elapsed=6s	src_exec=373ms
+2026-07-18T16:06:21Z	DONE	C-prsample-20240525
+2026-07-18T16:06:21Z	LOADED	C-prsample-20240330	rows=43972	elapsed=6s	src_exec=386ms
+2026-07-18T16:06:21Z	DONE	C-prsample-20240330
+2026-07-18T16:06:21Z	START	C-prsample-20240526 (attempt 1, http)
+2026-07-18T16:06:21Z	START	C-prsample-20240331 (attempt 1, http)
+2026-07-18T16:06:27Z	LOADED	C-prsample-20240331	rows=41487	elapsed=6s	src_exec=454ms
+2026-07-18T16:06:27Z	DONE	C-prsample-20240331
+2026-07-18T16:06:27Z	LOADED	C-prsample-20240526	rows=47412	elapsed=6s	src_exec=375ms
+2026-07-18T16:06:27Z	DONE	C-prsample-20240526
+2026-07-18T16:06:27Z	START	C-prsample-20240401 (attempt 1, http)
+2026-07-18T16:06:28Z	START	C-prsample-20240527 (attempt 1, http)
+2026-07-18T16:06:34Z	LOADED	C-prsample-20240527	rows=92068	elapsed=7s	src_exec=634ms
+2026-07-18T16:06:34Z	DONE	C-prsample-20240527
+2026-07-18T16:06:34Z	LOADED	C-prsample-20240401	rows=99849	elapsed=7s	src_exec=363ms
+2026-07-18T16:06:34Z	DONE	C-prsample-20240401
+2026-07-18T16:06:35Z	START	C-prsample-20240528 (attempt 1, http)
+2026-07-18T16:06:35Z	START	C-prsample-20240402 (attempt 1, http)
+2026-07-18T16:06:41Z	LOADED	C-prsample-20240528	rows=78610	elapsed=7s	src_exec=373ms
+2026-07-18T16:06:41Z	DONE	C-prsample-20240528
+2026-07-18T16:06:42Z	START	C-prsample-20240529 (attempt 1, http)
+2026-07-18T16:06:42Z	LOADED	C-prsample-20240402	rows=82784	elapsed=8s	src_exec=673ms
+2026-07-18T16:06:42Z	DONE	C-prsample-20240402
+2026-07-18T16:06:43Z	START	C-prsample-20240403 (attempt 1, http)
+2026-07-18T16:06:48Z	LOADED	C-prsample-20240529	rows=81751	elapsed=7s	src_exec=351ms
+2026-07-18T16:06:48Z	DONE	C-prsample-20240529
+2026-07-18T16:06:49Z	START	C-prsample-20240530 (attempt 1, http)
+2026-07-18T16:06:49Z	LOADED	C-prsample-20240403	rows=87044	elapsed=7s	src_exec=361ms
+2026-07-18T16:06:50Z	DONE	C-prsample-20240403
+2026-07-18T16:06:50Z	START	C-prsample-20240404 (attempt 1, http)
+2026-07-18T16:06:56Z	LOADED	C-prsample-20240530	rows=77847	elapsed=8s	src_exec=325ms
+2026-07-18T16:06:56Z	DONE	C-prsample-20240530
+2026-07-18T16:06:56Z	START	C-prsample-20240531 (attempt 1, http)
+2026-07-18T16:06:56Z	LOADED	C-prsample-20240404	rows=88473	elapsed=6s	src_exec=372ms
+2026-07-18T16:06:56Z	DONE	C-prsample-20240404
+2026-07-18T16:06:57Z	START	C-prsample-20240405 (attempt 1, http)
+2026-07-18T16:07:03Z	LOADED	C-prsample-20240531	rows=74900	elapsed=7s	src_exec=360ms
+2026-07-18T16:07:03Z	DONE	C-prsample-20240531
+2026-07-18T16:07:03Z	START	C-prsample-20240601 (attempt 1, http)
+2026-07-18T16:07:04Z	LOADED	C-prsample-20240405	rows=77609	elapsed=8s	src_exec=366ms
+2026-07-18T16:07:04Z	DONE	C-prsample-20240405
+2026-07-18T16:07:04Z	START	C-prsample-20240406 (attempt 1, http)
+2026-07-18T16:07:09Z	LOADED	C-prsample-20240601	rows=62479	elapsed=6s	src_exec=375ms
+2026-07-18T16:07:09Z	DONE	C-prsample-20240601
+2026-07-18T16:07:10Z	LOADED	C-prsample-20240406	rows=47035	elapsed=6s	src_exec=496ms
+2026-07-18T16:07:10Z	DONE	C-prsample-20240406
+2026-07-18T16:07:10Z	START	C-prsample-20240602 (attempt 1, http)
+2026-07-18T16:07:10Z	START	C-prsample-20240407 (attempt 1, http)
+2026-07-18T16:07:15Z	LOADED	C-prsample-20240602	rows=49563	elapsed=6s	src_exec=322ms
+2026-07-18T16:07:15Z	DONE	C-prsample-20240602
+2026-07-18T16:07:16Z	START	C-prsample-20240603 (attempt 1, http)
+2026-07-18T16:07:16Z	LOADED	C-prsample-20240407	rows=49913	elapsed=6s	src_exec=594ms
+2026-07-18T16:07:16Z	DONE	C-prsample-20240407
+2026-07-18T16:07:16Z	START	C-prsample-20240408 (attempt 1, http)
+2026-07-18T16:07:23Z	LOADED	C-prsample-20240603	rows=104755	elapsed=8s	src_exec=336ms
+2026-07-18T16:07:23Z	DONE	C-prsample-20240603
+2026-07-18T16:07:24Z	LOADED	C-prsample-20240408	rows=96407	elapsed=8s	src_exec=408ms
+2026-07-18T16:07:24Z	DONE	C-prsample-20240408
+2026-07-18T16:07:24Z	START	C-prsample-20240604 (attempt 1, http)
+2026-07-18T16:07:24Z	START	C-prsample-20240409 (attempt 1, http)
+2026-07-18T16:07:24Z	RETRY	C-prsample-20240604	attempt 1 failed, sleeping 10s
+2026-07-18T16:07:25Z	RETRY	C-prsample-20240409	attempt 1 failed, sleeping 10s
+2026-07-18T16:07:35Z	START	C-prsample-20240604 (attempt 2, http)
+2026-07-18T16:07:35Z	START	C-prsample-20240409 (attempt 2, http)
+2026-07-18T16:07:35Z	RETRY	C-prsample-20240604	attempt 2 failed, sleeping 20s
+2026-07-18T16:07:36Z	RETRY	C-prsample-20240409	attempt 2 failed, sleeping 20s
+2026-07-18T16:07:56Z	START	C-prsample-20240604 (attempt 3, http)
+2026-07-18T16:07:56Z	START	C-prsample-20240409 (attempt 3, http)
+2026-07-18T16:07:57Z	RETRY	C-prsample-20240604	attempt 3 failed, sleeping 30s
+2026-07-18T16:07:57Z	RETRY	C-prsample-20240409	attempt 3 failed, sleeping 30s
+2026-07-18T16:08:27Z	START	C-prsample-20240604 (attempt 4, http)
+2026-07-18T16:08:28Z	START	C-prsample-20240409 (attempt 4, http)
+2026-07-18T16:08:28Z	RETRY	C-prsample-20240604	attempt 4 failed, sleeping 40s
+2026-07-18T16:08:28Z	RETRY	C-prsample-20240409	attempt 4 failed, sleeping 40s
+2026-07-18T16:09:08Z	START	C-prsample-20240604 (attempt 5, http)
+2026-07-18T16:09:09Z	START	C-prsample-20240409 (attempt 5, http)
+2026-07-18T16:09:09Z	RETRY	C-prsample-20240604	attempt 5 failed, sleeping 50s
+2026-07-18T16:09:10Z	RETRY	C-prsample-20240409	attempt 5 failed, sleeping 50s
+2026-07-18T16:09:59Z	FAILED	C-prsample-20240604	giving up after 5 attempts
+2026-07-18T16:10:00Z	FAILED	C-prsample-20240409	giving up after 5 attempts
+2026-07-18T16:10:00Z	RUN	a2_run_all FINISHED WITH ERRORS — re-run to resume
+2026-07-18T20:15:23Z	RUN	a2_run_all started
+2026-07-18T20:15:24Z	TABLE	github.github_events ready
+2026-07-18T20:15:25Z	TABLE	current row count: 103639819
+2026-07-18T20:15:25Z	SKIP	A-repo-lavague-ai_LaVague	already done
+2026-07-18T20:15:25Z	SKIP	A-repo-Zejun-Yang_AniPortrait	already done
+2026-07-18T20:15:25Z	SKIP	A-repo-deepseek-ai_DeepSeek-VL	already done
+2026-07-18T20:15:25Z	SKIP	A-repo-solidSpoon_DashPlayer	already done
+2026-07-18T20:15:25Z	SKIP	A-repo-OpenInterpreter_01	already done
+2026-07-18T20:15:27Z	PHASE-A	complete: 32630 rows for target repos
+2026-07-18T20:15:28Z	PHASE-B	actor set: 20334 actors
+2026-07-18T20:15:28Z	PHASE-C-watch	complete (2024-01-01..2024-07-01)
+2026-07-18T20:15:29Z	PHASE-C-create	complete (2024-01-01..2024-07-01)
+2026-07-18T20:15:29Z	PHASE-C-fork	complete (2024-01-01..2024-07-01)
+2026-07-18T20:15:31Z	PHASE-B	complete: 16921935 actor-star rows
+2026-07-18T20:15:32Z	START	C-prsample-20240409 (attempt 1, http)
+2026-07-18T20:15:38Z	LOADED	C-prsample-20240409	rows=81632	elapsed=7s	src_exec=334ms
+2026-07-18T20:15:38Z	DONE	C-prsample-20240409
+2026-07-18T20:15:39Z	START	C-prsample-20240410 (attempt 1, http)
+2026-07-18T20:15:45Z	LOADED	C-prsample-20240410	rows=83563	elapsed=7s	src_exec=357ms
+2026-07-18T20:15:45Z	DONE	C-prsample-20240410
+2026-07-18T20:15:46Z	START	C-prsample-20240411 (attempt 1, http)
+2026-07-18T20:15:52Z	LOADED	C-prsample-20240411	rows=83717	elapsed=7s	src_exec=359ms
+2026-07-18T20:15:52Z	DONE	C-prsample-20240411
+2026-07-18T20:15:52Z	START	C-prsample-20240412 (attempt 1, http)
+2026-07-18T20:16:00Z	LOADED	C-prsample-20240412	rows=83384	elapsed=8s	src_exec=321ms
+2026-07-18T20:16:00Z	DONE	C-prsample-20240412
+2026-07-18T20:16:00Z	START	C-prsample-20240413 (attempt 1, http)
+2026-07-18T20:16:06Z	LOADED	C-prsample-20240413	rows=48892	elapsed=6s	src_exec=393ms
+2026-07-18T20:16:06Z	DONE	C-prsample-20240413
+2026-07-18T20:16:07Z	START	C-prsample-20240414 (attempt 1, http)
+2026-07-18T20:16:12Z	LOADED	C-prsample-20240414	rows=53255	elapsed=6s	src_exec=352ms
+2026-07-18T20:16:12Z	DONE	C-prsample-20240414
+2026-07-18T20:16:13Z	START	C-prsample-20240604 (attempt 1, http)
+2026-07-18T20:16:20Z	LOADED	C-prsample-20240604	rows=87930	elapsed=7s	src_exec=349ms
+2026-07-18T20:16:20Z	DONE	C-prsample-20240604
+2026-07-18T20:16:20Z	START	C-prsample-20240605 (attempt 1, http)
+2026-07-18T20:16:29Z	LOADED	C-prsample-20240605	rows=90193	elapsed=9s	src_exec=370ms
+2026-07-18T20:16:29Z	DONE	C-prsample-20240605
+2026-07-18T20:16:29Z	START	C-prsample-20240606 (attempt 1, http)
+2026-07-18T20:16:36Z	LOADED	C-prsample-20240606	rows=82925	elapsed=7s	src_exec=345ms
+2026-07-18T20:16:36Z	DONE	C-prsample-20240606
+2026-07-18T20:16:37Z	START	C-prsample-20240607 (attempt 1, http)
+2026-07-18T20:16:43Z	LOADED	C-prsample-20240607	rows=76024	elapsed=7s	src_exec=309ms
+2026-07-18T20:16:43Z	DONE	C-prsample-20240607
+2026-07-18T20:16:43Z	START	C-prsample-20240608 (attempt 1, http)
+2026-07-18T20:16:49Z	LOADED	C-prsample-20240608	rows=49262	elapsed=6s	src_exec=341ms
+2026-07-18T20:16:49Z	DONE	C-prsample-20240608
+2026-07-18T20:16:49Z	START	C-prsample-20240609 (attempt 1, http)
+2026-07-18T20:16:55Z	LOADED	C-prsample-20240609	rows=48889	elapsed=6s	src_exec=360ms
+2026-07-18T20:16:55Z	DONE	C-prsample-20240609
+2026-07-18T20:16:55Z	START	C-prsample-20240610 (attempt 1, http)
+2026-07-18T20:17:02Z	LOADED	C-prsample-20240610	rows=100218	elapsed=7s	src_exec=388ms
+2026-07-18T20:17:02Z	DONE	C-prsample-20240610
+2026-07-18T20:17:02Z	START	C-prsample-20240611 (attempt 1, http)
+2026-07-18T20:17:09Z	LOADED	C-prsample-20240611	rows=87957	elapsed=7s	src_exec=383ms
+2026-07-18T20:17:09Z	DONE	C-prsample-20240611
+2026-07-18T20:17:09Z	START	C-prsample-20240612 (attempt 1, http)
+2026-07-18T20:17:16Z	LOADED	C-prsample-20240612	rows=85999	elapsed=7s	src_exec=371ms
+2026-07-18T20:17:16Z	DONE	C-prsample-20240612
+2026-07-18T20:17:16Z	START	C-prsample-20240613 (attempt 1, http)
+2026-07-18T20:17:23Z	LOADED	C-prsample-20240613	rows=84119	elapsed=7s	src_exec=356ms
+2026-07-18T20:17:23Z	DONE	C-prsample-20240613
+2026-07-18T20:17:23Z	START	C-prsample-20240614 (attempt 1, http)
+2026-07-18T20:17:30Z	LOADED	C-prsample-20240614	rows=77947	elapsed=7s	src_exec=353ms
+2026-07-18T20:17:30Z	DONE	C-prsample-20240614
+2026-07-18T20:17:30Z	START	C-prsample-20240615 (attempt 1, http)
+2026-07-18T20:17:35Z	LOADED	C-prsample-20240615	rows=47835	elapsed=5s	src_exec=363ms
+2026-07-18T20:17:35Z	DONE	C-prsample-20240615
+2026-07-18T20:17:35Z	START	C-prsample-20240616 (attempt 1, http)
+2026-07-18T20:17:41Z	LOADED	C-prsample-20240616	rows=51564	elapsed=6s	src_exec=391ms
+2026-07-18T20:17:41Z	DONE	C-prsample-20240616
+2026-07-18T20:17:42Z	START	C-prsample-20240617 (attempt 1, http)
+2026-07-18T20:17:49Z	LOADED	C-prsample-20240617	rows=111340	elapsed=8s	src_exec=334ms
+2026-07-18T20:17:49Z	DONE	C-prsample-20240617
+2026-07-18T20:17:49Z	START	C-prsample-20240618 (attempt 1, http)
+2026-07-18T20:17:57Z	LOADED	C-prsample-20240618	rows=99420	elapsed=8s	src_exec=348ms
+2026-07-18T20:17:57Z	DONE	C-prsample-20240618
+2026-07-18T20:17:57Z	START	C-prsample-20240619 (attempt 1, http)
+2026-07-18T20:18:04Z	LOADED	C-prsample-20240619	rows=85052	elapsed=7s	src_exec=335ms
+2026-07-18T20:18:04Z	DONE	C-prsample-20240619
+2026-07-18T20:18:05Z	START	C-prsample-20240620 (attempt 1, http)
+2026-07-18T20:18:12Z	LOADED	C-prsample-20240620	rows=82927	elapsed=8s	src_exec=342ms
+2026-07-18T20:18:12Z	DONE	C-prsample-20240620
+2026-07-18T20:18:12Z	START	C-prsample-20240621 (attempt 1, http)
+2026-07-18T20:18:18Z	LOADED	C-prsample-20240621	rows=82753	elapsed=6s	src_exec=361ms
+2026-07-18T20:18:18Z	DONE	C-prsample-20240621
+2026-07-18T20:18:19Z	START	C-prsample-20240622 (attempt 1, http)
+2026-07-18T20:18:25Z	LOADED	C-prsample-20240622	rows=49837	elapsed=6s	src_exec=371ms
+2026-07-18T20:18:25Z	DONE	C-prsample-20240622
+2026-07-18T20:18:25Z	START	C-prsample-20240623 (attempt 1, http)
+2026-07-18T20:18:31Z	LOADED	C-prsample-20240623	rows=48348	elapsed=6s	src_exec=371ms
+2026-07-18T20:18:31Z	DONE	C-prsample-20240623
+2026-07-18T20:18:31Z	START	C-prsample-20240624 (attempt 1, http)
+2026-07-18T20:18:38Z	LOADED	C-prsample-20240624	rows=97426	elapsed=7s	src_exec=406ms
+2026-07-18T20:18:38Z	DONE	C-prsample-20240624
+2026-07-18T20:18:39Z	START	C-prsample-20240625 (attempt 1, http)
+2026-07-18T20:18:46Z	LOADED	C-prsample-20240625	rows=84997	elapsed=8s	src_exec=327ms
+2026-07-18T20:18:46Z	DONE	C-prsample-20240625
+2026-07-18T20:18:46Z	START	C-prsample-20240626 (attempt 1, http)
+2026-07-18T20:18:52Z	LOADED	C-prsample-20240626	rows=81247	elapsed=6s	src_exec=344ms
+2026-07-18T20:18:52Z	DONE	C-prsample-20240626
+2026-07-18T20:18:53Z	START	C-prsample-20240627 (attempt 1, http)
+2026-07-18T20:18:59Z	LOADED	C-prsample-20240627	rows=78923	elapsed=6s	src_exec=346ms
+2026-07-18T20:18:59Z	DONE	C-prsample-20240627
+2026-07-18T20:19:00Z	START	C-prsample-20240628 (attempt 1, http)
+2026-07-18T20:19:06Z	LOADED	C-prsample-20240628	rows=73919	elapsed=7s	src_exec=395ms
+2026-07-18T20:19:06Z	DONE	C-prsample-20240628
+2026-07-18T20:19:06Z	START	C-prsample-20240629 (attempt 1, http)
+2026-07-18T20:19:12Z	LOADED	C-prsample-20240629	rows=44788	elapsed=5s	src_exec=388ms
+2026-07-18T20:19:12Z	DONE	C-prsample-20240629
+2026-07-18T20:19:12Z	START	C-prsample-20240630 (attempt 1, http)
+2026-07-18T20:19:17Z	LOADED	C-prsample-20240630	rows=45058	elapsed=5s	src_exec=375ms
+2026-07-18T20:19:17Z	DONE	C-prsample-20240630
+2026-07-18T20:19:17Z	PHASE-C-pullrequest	complete (2024-01-01..2024-07-01)
+2026-07-18T20:19:17Z	RUN	a2_run_all complete
