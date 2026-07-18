@@ -122,10 +122,13 @@ const heatmap: ViewSpec = {
   cells: [
     { x: "Пн", y: "06–12", value: 3 },
     { x: "Пн", y: "12–18", value: 5 },
+    { x: "Вт", y: "06–12", value: 2 },
     { x: "Вт", y: "12–18", value: 4 },
     { x: "Ср", y: "06–12", value: 2 },
+    { x: "Ср", y: "12–18", value: 3 },
     { x: "Ср", y: "18–24", value: 6 },
     { x: "Чт", y: "12–18", value: 3 },
+    { x: "Чт", y: "18–24", value: 2 },
     { x: "Пт", y: "06–12", value: 4 },
     { x: "Пт", y: "12–18", value: 7 },
     { x: "Сб", y: "00–06", value: 12 },
@@ -135,6 +138,7 @@ const heatmap: ViewSpec = {
     { x: "Вс", y: "00–06", value: 240 },
     { x: "Вс", y: "06–12", value: 41 },
     { x: "Вс", y: "12–18", value: 8 },
+    { x: "Вс", y: "18–24", value: 3 },
   ],
   clicks: [
     {
@@ -146,33 +150,72 @@ const heatmap: ViewSpec = {
   ],
 };
 
+/**
+ * Граф ко-старинга (кульминация демо): хаб acme/turbo-widget + второй репо,
+ * 18 бот-аккаунтов с высоким score (почти все звездят ОБА репо — признак
+ * фермы), пара легитимных с низким score и связями только с одним репо.
+ * Бот-бот рёбра с weight — синхронные пачки звёзд в одном окне.
+ */
+const BOTS: Array<{ n: string; score: number; size?: number; both: boolean }> = [
+  { n: "star-bot-101", score: 0.97, size: 14, both: true },
+  { n: "star-bot-102", score: 0.93, size: 12, both: true },
+  { n: "star-bot-103", score: 0.91, size: 12, both: true },
+  { n: "star-bot-104", score: 0.9, size: 11, both: true },
+  { n: "fresh-dev-2024", score: 0.88, size: 10, both: true },
+  { n: "gh-user-77812", score: 0.86, size: 10, both: true },
+  { n: "gh-user-77813", score: 0.85, both: true },
+  { n: "gh-user-77814", score: 0.85, both: true },
+  { n: "nightly-star", score: 0.84, size: 9, both: true },
+  { n: "hello-world-9921", score: 0.83, both: true },
+  { n: "hello-world-9922", score: 0.82, both: true },
+  { n: "dev-acc-swarm-1", score: 0.81, both: true },
+  { n: "dev-acc-swarm-2", score: 0.8, both: true },
+  { n: "dev-acc-swarm-3", score: 0.79, both: false },
+  { n: "new-coder-0301", score: 0.78, both: true },
+  { n: "new-coder-0302", score: 0.77, both: false },
+  { n: "gitstar-4u", score: 0.75, both: true },
+  { n: "starforge-x", score: 0.72, both: false },
+];
+
 const graph: ViewSpec = {
   kind: "graph",
   title: "Ко-старинг: кластер аккаунтов вокруг acme/turbo-widget",
   nodes: [
-    { id: "repo:acme/turbo-widget", label: "acme/turbo-widget", size: 24 },
+    { id: "repo:acme/turbo-widget", label: "acme/turbo-widget", size: 26 },
     { id: "repo:dev0/ai-magic", label: "dev0/ai-magic", size: 18 },
-    { id: "user:star-bot-101", label: "star-bot-101", score: 0.97, size: 14 },
-    { id: "user:star-bot-102", label: "star-bot-102", score: 0.93, size: 12 },
-    { id: "user:star-bot-103", label: "star-bot-103", score: 0.91, size: 12 },
-    { id: "user:fresh-dev-2024", label: "fresh-dev-2024", score: 0.88, size: 10 },
-    { id: "user:gh-user-77812", label: "gh-user-77812", score: 0.84, size: 10 },
-    { id: "user:nightly-star", label: "nightly-star", score: 0.81, size: 9 },
+    ...BOTS.map((b) => ({
+      id: `user:${b.n}`,
+      label: b.n,
+      score: b.score,
+      ...(b.size !== undefined ? { size: b.size } : {}),
+    })),
     { id: "user:real-contributor", label: "real-contributor", score: 0.12, size: 8 },
+    { id: "user:oss-fan-2016", label: "oss-fan-2016", score: 0.08, size: 7 },
+    { id: "user:weekend-hacker", label: "weekend-hacker", score: 0.15, size: 6 },
   ],
   edges: [
-    { source: "user:star-bot-101", target: "repo:acme/turbo-widget", weight: 1 },
-    { source: "user:star-bot-102", target: "repo:acme/turbo-widget", weight: 1 },
-    { source: "user:star-bot-103", target: "repo:acme/turbo-widget", weight: 1 },
-    { source: "user:fresh-dev-2024", target: "repo:acme/turbo-widget", weight: 1 },
-    { source: "user:gh-user-77812", target: "repo:acme/turbo-widget", weight: 1 },
-    { source: "user:nightly-star", target: "repo:acme/turbo-widget", weight: 1 },
-    { source: "user:star-bot-101", target: "repo:dev0/ai-magic", weight: 1 },
-    { source: "user:star-bot-102", target: "repo:dev0/ai-magic", weight: 1 },
-    { source: "user:star-bot-103", target: "repo:dev0/ai-magic", weight: 1 },
+    // Боты → хаб (все) и второй репо (почти все) — ко-старинг фермы
+    ...BOTS.map((b) => ({
+      source: `user:${b.n}`,
+      target: "repo:acme/turbo-widget",
+      weight: 1,
+    })),
+    ...BOTS.filter((b) => b.both).map((b) => ({
+      source: `user:${b.n}`,
+      target: "repo:dev0/ai-magic",
+      weight: 1,
+    })),
+    // Синхронные пачки звёзд — плотные бот-бот связи
     { source: "user:star-bot-101", target: "user:star-bot-102", weight: 5 },
     { source: "user:star-bot-102", target: "user:star-bot-103", weight: 4 },
+    { source: "user:star-bot-103", target: "user:star-bot-104", weight: 4 },
+    { source: "user:dev-acc-swarm-1", target: "user:dev-acc-swarm-2", weight: 3 },
+    { source: "user:hello-world-9921", target: "user:hello-world-9922", weight: 3 },
+    { source: "user:new-coder-0301", target: "user:new-coder-0302", weight: 2 },
+    // Легитимные: только один репо, без бот-бот связей
     { source: "user:real-contributor", target: "repo:acme/turbo-widget", weight: 1 },
+    { source: "user:oss-fan-2016", target: "repo:acme/turbo-widget", weight: 1 },
+    { source: "user:weekend-hacker", target: "repo:dev0/ai-magic", weight: 1 },
   ],
   maxNodes: 50,
 };
