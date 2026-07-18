@@ -1,0 +1,36 @@
+# env files — секреты не коммитим; .env.example — шаблон, он остаётся в репо
+.env
+.env*.local
+
+# dependencies
+node_modules/
+/.pnp
+.pnp.*
+
+# next.js
+.next/
+/out/
+/build
+
+# trigger.dev
+.trigger/
+
+# vercel
+.vercel/
+
+# testing
+/coverage
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# misc
+.DS_Store
+*.pem

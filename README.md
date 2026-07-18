@@ -1,1 +1,87 @@
-# clickhouse-hackathon-2026
+# Insight Desk
+
+Чат-агент над `github_events` (ClickHouse) с интерактивными карточками-расследованиями.
+Хакатон «Beyond the Wall of Text» · ClickHouse + Trigger.dev. План и декомпозиция — [PLAN.md](./PLAN.md).
+
+## Dev & Deploy
+
+### Требования
+
+- Node.js 18+ (проверено на 22)
+- Аккаунты: [ClickHouse Cloud](https://clickhouse.cloud), [Trigger.dev cloud](https://cloud.trigger.dev), [Vercel](https://vercel.com)
+
+### Локальный запуск
+
+1. Установить зависимости:
+
+   ```bash
+   npm install
+   ```
+
+2. Создать `.env` из шаблона и заполнить (см. комментарии в файле):
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Проверить подключение к ClickHouse (SELECT 1 под read-only юзером `agent_ro`):
+
+   ```bash
+   npm run ch:ping
+   ```
+
+4. Запустить Next.js:
+
+   ```bash
+   npm run dev        # http://localhost:3000
+   ```
+
+5. Во втором терминале — dev-сервер Trigger.dev (спросит логин при первом запуске):
+
+   ```bash
+   npx trigger.dev@latest dev
+   ```
+
+   Таски из `src/trigger/` появятся в дашборде. Проверка связки: таб **Test** →
+   таска `hello` → payload `{"name": "ClickHouse"}`.
+
+Project ref захардкожен в `trigger.config.ts` (канон Trigger.dev); `TRIGGER_SECRET_KEY`
+подхватывается из `.env` и в конфиг не пишется. Свой проект — замените `project` в
+`trigger.config.ts` (дашборд → Project settings → Project ref).
+
+### Деплой (выполняется вручную, не из CI)
+
+**Trigger.dev cloud** — деплой тасок:
+
+```bash
+npx trigger.dev@latest login     # один раз
+npx trigger.dev@latest deploy    # собирает и заливает src/trigger/ в prod
+```
+
+В дашборде Trigger.dev (prod-окружение → Environment variables) задать переменные
+ClickHouse из `.env.example` (`CLICKHOUSE_URL`, `AGENT_RO_*`, `AGENT_SCRATCH_*`).
+
+**Vercel** — деплой Next.js:
+
+```bash
+npx vercel link      # привязать директорию к проекту (один раз)
+npx vercel deploy --prod
+```
+
+В настройках проекта Vercel (Settings → Environment Variables) задать все переменные
+из `.env.example`; `TRIGGER_SECRET_KEY` — **prod**-ключ (`tr_prod_…`, дашборд Trigger.dev →
+API Keys), не dev-ключ из локального `.env`.
+
+После деплоя проверить публичную ссылку со свежего устройства (задача J4).
+
+### Структура
+
+```
+src/app/            # Next.js App Router: страница рабочего места (лента + композер)
+src/trigger/        # Таски Trigger.dev v4 (hello — смоук; далее explore-schema, investigate)
+src/lib/clickhouse.ts   # Фабрики клиентов: readonly (agent_ro) и scratch (agent_scratch)
+src/lib/contracts/  # Zod-контракты ViewSpec/ClickContext — замораживаются на J1
+scripts/ch-ping.ts  # Смоук ClickHouse: npm run ch:ping
+db/                 # Провижининг ClickHouse (трек A)
+trigger.config.ts   # Конфиг Trigger.dev (project ref, retries, maxDuration)
+```

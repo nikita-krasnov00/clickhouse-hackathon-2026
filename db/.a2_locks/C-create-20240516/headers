@@ -1,0 +1,16 @@
+HTTP/1.1 200 OK
+X-ClickHouse-Summary: {"read_rows":"86023913","read_bytes":"429241513","written_rows":"0","written_bytes":"0","total_rows_to_read":"1309930538","result_rows":"0","result_bytes":"0","elapsed_ns":"341499081","memory_usage":"96136865"}
+Strict-Transport-Security: max-age=864000
+Date: Sat, 18 Jul 2026 15:48:52 GMT
+Connection: Keep-Alive
+Content-Type: application/octet-stream
+Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag
+X-ClickHouse-Server-Display-Name: play-eu-v2
+Transfer-Encoding: chunked
+X-ClickHouse-Query-Id: 78739e2a-f1a0-448c-8e57-54eb06184d8a
+X-ClickHouse-Format: Native
+X-ClickHouse-Timezone: Etc/UTC
+Keep-Alive: timeout=10, max=9999
+Content-Encoding: zstd
+X-ClickHouse-Exception-Tag: xrevjqvbyrsdaard
+
