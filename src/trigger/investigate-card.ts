@@ -25,9 +25,12 @@ import { cardTitle, runPlannedCard } from "@/lib/agent/pipeline";
 const schemaContextSchema = z.object({
   table: z.string(),
   rowCount: z.number(),
+  sortingKey: z.array(z.string()),
   dateColumn: z.string(),
   dateRange: z.object({ min: z.string(), max: z.string() }),
-  columns: z.array(z.object({ name: z.string(), type: z.string() })),
+  columns: z.array(
+    z.object({ name: z.string(), type: z.string(), comment: z.string().optional() }),
+  ),
   keyColumns: z.array(
     z.object({
       column: z.string(),

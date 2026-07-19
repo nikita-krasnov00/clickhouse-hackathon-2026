@@ -47,6 +47,12 @@ export type KeyColumnStats = {
 export type SchemaContext = {
   table: string;
   rowCount: number;
+  /**
+   * ORDER BY / первичный ключ таблицы. КРИТИЧНО для скорости: индекс MergeTree
+   * прунит гранулы только при фильтре по ПРЕФИКСУ этого ключа — LLM обязан это
+   * учитывать (см. правила перформанса в generate-sql.ts).
+   */
+  sortingKey: string[];
   /** Пустая строка, если в таблице нет колонок Date/DateTime*. */
   dateColumn: string;
   dateRange: { min: string; max: string };
@@ -68,14 +74,30 @@ const MAX_KEY_COLUMNS = 3;
 const KEY_TOP_N = 30;
 /** Сколько таблиц исследуем одновременно (см. комментарий в exploreSchema). */
 const EXPLORE_CONCURRENCY = 2;
-/** С этого размера uniq считаем не по всей таблице, а по окну/сэмплу. */
+/** С этого размера uniq считаем не по всей таблице, а по LIMIT-сэмплу. */
 const BIG_TABLE_ROWS = 10_000_000;
-/** Окно «последнего доступного периода» для uniq на больших таблицах. */
-const UNIQ_WINDOW_DAYS = 30;
 /** Размер LIMIT-сэмпла для оценок uniq (SAMPLE требует ключа сэмплирования). */
 const UNIQ_SAMPLE_ROWS = 500_000;
 /** String-колонка попадает в ключевые, если её uniq по сэмплу не больше этого. */
 const LOW_UNIQ_THRESHOLD = 200;
+/**
+ * Топ-N с частотами (GROUP BY) считаем только для колонок с кардинальностью
+ * не выше этого порога. GROUP BY по высококардинальной колонке (repo_name —
+ * 35M уникальных) на 150M строк сканирует всю таблицу за 10-13с и рискует
+ * таймаутом; такой колонке отдаём только оценку кардинальности, а примеры
+ * значений LLM видит в сэмпл-строках.
+ */
+const TOPN_MAX_CARD = 1_000;
+/**
+ * Страховка от таймаута: любой аналитический запрос exploration ограничен по
+ * времени и при переполнении возвращает ЧАСТИЧНЫЙ результат (break), а не
+ * ошибку. Так живое исследование под нагрузкой (например, во время заливки
+ * данных) не роняет ран — в худшем случае статистика будет приблизительной.
+ */
+const EXPLORE_SETTINGS = {
+  max_execution_time: 20,
+  timeout_overflow_mode: "break",
+} as const;
 
 /** Системные базы — не таблицы данных. */
 const SYSTEM_DATABASES = ["system", "information_schema", "INFORMATION_SCHEMA"];
@@ -86,17 +108,33 @@ const HIDDEN_DATABASES = ["scratch"];
 // Обнаружение таблиц
 // ---------------------------------------------------------------------------
 
-type DiscoveredTable = { database: string; name: string; totalRows: number };
+type DiscoveredTable = {
+  database: string;
+  name: string;
+  totalRows: number;
+  /** Колонки ORDER BY / первичного ключа (для промпта и подсказок LLM). */
+  sortingKey: string[];
+};
+
+/** `event_type, repo_name, created_at` → ['event_type','repo_name','created_at']. */
+function parseSortingKey(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
 
 /**
  * Непустые таблицы, видимые agent_ro (гранты = скоуп агента), без системных
  * баз, служебной scratch и View. Фильтр total_rows > 0 заодно отсекает
  * внешние движки вроде URL (total_rows NULL) — их count() ходил бы по сети.
+ * sorting_key берём тут же — он бесплатен из system.tables и критичен для
+ * подсказок LLM о прунинге по индексу.
  */
 async function discoverTables(client: ClickHouseClient): Promise<DiscoveredTable[]> {
   const rs = await client.query({
     query: `
-      SELECT database, name, coalesce(total_rows, 0) AS total_rows
+      SELECT database, name, coalesce(total_rows, 0) AS total_rows, sorting_key
       FROM system.tables
       WHERE database NOT IN {hidden:Array(String)}
         AND engine NOT LIKE '%View%'
@@ -106,11 +144,17 @@ async function discoverTables(client: ClickHouseClient): Promise<DiscoveredTable
     query_params: { hidden: [...SYSTEM_DATABASES, ...HIDDEN_DATABASES] },
     format: "JSONEachRow",
   });
-  const rows = await rs.json<{ database: string; name: string; total_rows: string | number }>();
+  const rows = await rs.json<{
+    database: string;
+    name: string;
+    total_rows: string | number;
+    sorting_key: string;
+  }>();
   return rows.map((r) => ({
     database: r.database,
     name: r.name,
     totalRows: Number(r.total_rows),
+    sortingKey: parseSortingKey(r.sorting_key ?? ""),
   }));
 }
 
@@ -224,18 +268,29 @@ async function fetchColumns(
   }));
 }
 
-/** Оценка uniq String-колонок по LIMIT-сэмплу — дёшево даже на больших таблицах. */
-async function estimateStringUniq(
+/**
+ * Оценка uniq колонок: на больших таблицах — по LIMIT-сэмплу (дёшево и
+ * ограниченно), на малых — точный uniqCombined по всей таблице. Одним запросом
+ * на все колонки. Число приблизительное, но для промпта и для решения
+ * «низкокардинальная ли колонка» этого достаточно.
+ */
+async function estimateColumnUniq(
   client: ClickHouseClient,
   table: string,
+  totalRows: number,
   columns: string[],
 ): Promise<Map<string, number>> {
   if (columns.length === 0) return new Map();
-  const inner = columns.map((c) => `\`${c}\``).join(", ");
   const exprs = columns.map((c, i) => `uniqCombined(\`${c}\`) AS u${i}`).join(", ");
+  const inner = columns.map((c) => `\`${c}\``).join(", ");
+  const from =
+    totalRows > BIG_TABLE_ROWS
+      ? `(SELECT ${inner} FROM ${table} LIMIT ${UNIQ_SAMPLE_ROWS})`
+      : table;
   const rs = await client.query({
-    query: `SELECT ${exprs} FROM (SELECT ${inner} FROM ${table} LIMIT ${UNIQ_SAMPLE_ROWS})`,
+    query: `SELECT ${exprs} FROM ${from}`,
     format: "JSONEachRow",
+    clickhouse_settings: EXPLORE_SETTINGS,
   });
   const row = (await rs.json<Record<string, string | number>>())[0] ?? {};
   return new Map(columns.map((c, i) => [c, Number(row[`u${i}`] ?? 0)]));
@@ -248,6 +303,7 @@ async function estimateStringUniq(
 async function pickKeyColumns(
   client: ClickHouseClient,
   table: string,
+  totalRows: number,
   columns: ColumnInfo[],
 ): Promise<string[]> {
   const picked = columns
@@ -257,7 +313,7 @@ async function pickKeyColumns(
   if (picked.length >= MAX_KEY_COLUMNS) return picked;
 
   const plain = columns.filter((c) => isPlainString(c.type)).map((c) => c.name);
-  const uniq = await estimateStringUniq(client, table, plain);
+  const uniq = await estimateColumnUniq(client, table, totalRows, plain);
   const lowUniq = plain
     .filter((c) => {
       const u = uniq.get(c) ?? Infinity;
@@ -268,35 +324,24 @@ async function pickKeyColumns(
 }
 
 /**
- * Кардинальности ключевых колонок одним сканом. На больших таблицах полный
- * uniq дорог и может не влезть в 30-сек таймаут agent_ro, поэтому оценка:
- * uniqCombined по окну последних UNIQ_WINDOW_DAYS дней данных (если есть
- * колонка даты) либо по LIMIT-сэмплу.
+ * Топ-N значений с частотами для одной ключевой колонки. Только для
+ * низкокардинальных колонок (проверка вызывающим) — их GROUP BY даёт мало
+ * групп и укладывается в бюджет; break — страховка от таймаута под нагрузкой.
  */
-async function keyColumnCardinalities(
+async function keyColumnTop(
   client: ClickHouseClient,
-  target: { table: string; totalRows: number; dateColumn: string; dateMax: string },
-  keyColumns: string[],
-): Promise<number[]> {
-  if (keyColumns.length === 0) return [];
-  const exprs = keyColumns.map((c, i) => `uniqCombined(\`${c}\`) AS c${i}`).join(", ");
-  let query: string;
-  const query_params: Record<string, unknown> = {};
-  if (target.totalRows <= BIG_TABLE_ROWS) {
-    query = `SELECT ${exprs} FROM ${target.table}`;
-  } else if (target.dateColumn && target.dateMax) {
-    query = `
-      SELECT ${exprs} FROM ${target.table}
-      WHERE \`${target.dateColumn}\` >= parseDateTimeBestEffort({mx:String}) - INTERVAL ${UNIQ_WINDOW_DAYS} DAY
-    `;
-    query_params.mx = target.dateMax;
-  } else {
-    const inner = keyColumns.map((c) => `\`${c}\``).join(", ");
-    query = `SELECT ${exprs} FROM (SELECT ${inner} FROM ${target.table} LIMIT ${UNIQ_SAMPLE_ROWS})`;
-  }
-  const rs = await client.query({ query, query_params, format: "JSONEachRow" });
-  const row = (await rs.json<Record<string, string | number>>())[0] ?? {};
-  return keyColumns.map((_, i) => Number(row[`c${i}`] ?? 0));
+  table: string,
+  column: string,
+): Promise<TopValue[]> {
+  const rs = await client.query({
+    query: `SELECT toString(\`${column}\`) AS v, count() AS n FROM ${table} GROUP BY v ORDER BY n DESC LIMIT ${KEY_TOP_N}`,
+    format: "JSONEachRow",
+    clickhouse_settings: EXPLORE_SETTINGS,
+  });
+  return (await rs.json<{ v: string; n: string | number }>()).map((r) => ({
+    v: r.v,
+    n: Number(r.n),
+  }));
 }
 
 type TableTarget = {
@@ -306,10 +351,12 @@ type TableTarget = {
   name: string;
   /** Приблизительный размер из system.tables — выбор стратегии uniq. */
   totalRows: number;
+  /** ORDER BY / первичный ключ (из discoverTables). */
+  sortingKey: string[];
   /** Переопределение колонки даты (конфиг приоритетной таблицы). */
   preferredDateColumn?: string;
   /**
-   * Глубокое исследование (топ-N значений, кардинальности) — только для
+   * Глубокое исследование (кардинальности + топ-N значений) — только для
    * приоритетной таблицы: это самые дорогие запросы, а exploration живёт
    * на каждом ране. Второстепенным таблицам хватает колонок, диапазона дат
    * и сэмплов — LLM сможет их запрашивать, просто без готовой статистики.
@@ -328,21 +375,15 @@ async function exploreTable(
   }
   const dateColumn = pickDateColumn(columns, target.preferredDateColumn);
 
-  // Дальше все независимые стадии — ПАРАЛЛЕЛЬНО (латентность = максимум, не
-  // сумма стадий): min/max даты (→ кардинальности по окну), топ-N значений,
-  // сэмпл-строки. count() не нужен — total_rows из system.tables бесплатен.
-  //
-  // Топ-N: на больших таблицах точный GROUP BY по высококардинальной колонке
-  // (repo_name — 35M уникальных) строит хэш на гигабайты и ловит
-  // MEMORY_LIMIT_EXCEEDED — там берём approx_top_count: алгоритм space-saving
-  // с ограниченной памятью, частоты приближённые, но промпту LLM хватает.
-  // Кардинальности — оценки по окну/сэмплу, на больших таблицах занижают,
-  // поэтому поднимаем их минимум до числа топ-значений.
+  // Все независимые стадии — ПАРАЛЛЕЛЬНО (латентность = максимум, не сумма):
+  // min/max даты, сэмпл-строки, статистика ключевых колонок. count() не нужен —
+  // total_rows из system.tables бесплатен.
   const minMaxPromise: Promise<{ mn?: string; mx?: string } | undefined> = dateColumn
     ? client
         .query({
           query: `SELECT min(\`${dateColumn}\`) AS mn, max(\`${dateColumn}\`) AS mx FROM ${target.table}`,
           format: "JSONEachRow",
+          clickhouse_settings: EXPLORE_SETTINGS,
         })
         .then(async (rs) => (await rs.json<{ mn?: string; mx?: string }>())[0])
     : Promise.resolve(undefined);
@@ -351,41 +392,25 @@ async function exploreTable(
     .query({ query: `SELECT * FROM ${target.table} LIMIT 3`, format: "JSONEachRow" })
     .then(async (rs) => (await rs.json<Record<string, unknown>>()).map(compactSampleRow));
 
+  // Статистика ключевых колонок: кардинальность — дёшево (сэмпл на больших
+  // таблицах), топ-N с частотами — ТОЛЬКО для низкокардинальных колонок
+  // (event_type, action…). Высококардинальным (repo_name, actor_login: 35M/13M
+  // уникальных) полный GROUP BY стоил бы 10-13с и грозил таймаутом — им отдаём
+  // одну кардинальность, а примеры значений LLM видит в сэмпл-строках.
   const keyColumnsPromise: Promise<KeyColumnStats[]> = target.deep
     ? (async () => {
-        const keyColumnNames = await pickKeyColumns(client, target.table, columns);
-        const big = target.totalRows > BIG_TABLE_ROWS;
-        const topsPromise = Promise.all(
-          keyColumnNames.map(async (column) => {
-            const query = big
-              ? `SELECT tupleElement(t, 1) AS v, tupleElement(t, 2) AS n
-                 FROM (SELECT arrayJoin(approx_top_count(${KEY_TOP_N})(toString(\`${column}\`))) AS t FROM ${target.table})`
-              : `SELECT toString(\`${column}\`) AS v, count() AS n FROM ${target.table} GROUP BY v ORDER BY n DESC LIMIT ${KEY_TOP_N}`;
-            const topRs = await client.query({ query, format: "JSONEachRow" });
-            return (await topRs.json<{ v: string; n: string | number }>()).map((r) => ({
-              v: r.v,
-              n: Number(r.n),
-            }));
+        const names = await pickKeyColumns(client, target.table, target.totalRows, columns);
+        const card = await estimateColumnUniq(client, target.table, target.totalRows, names);
+        return Promise.all(
+          names.map(async (column) => {
+            const cardinality = card.get(column) ?? 0;
+            const top =
+              cardinality > 0 && cardinality <= TOPN_MAX_CARD
+                ? await keyColumnTop(client, target.table, column)
+                : [];
+            return { column, cardinality: Math.max(cardinality, top.length), top };
           }),
         );
-        const cardinalitiesPromise = minMaxPromise.then((mm) =>
-          keyColumnCardinalities(
-            client,
-            {
-              table: target.table,
-              totalRows: target.totalRows,
-              dateColumn,
-              dateMax: mm?.mx ?? "",
-            },
-            keyColumnNames,
-          ),
-        );
-        const [tops, cardinalities] = await Promise.all([topsPromise, cardinalitiesPromise]);
-        return keyColumnNames.map((column, i) => ({
-          column,
-          cardinality: Math.max(cardinalities[i] ?? 0, tops[i].length),
-          top: tops[i],
-        }));
       })()
     : Promise.resolve([]);
 
@@ -398,6 +423,7 @@ async function exploreTable(
   return {
     table: target.table,
     rowCount: target.totalRows,
+    sortingKey: target.sortingKey,
     dateColumn,
     dateRange: { min: totals?.mn ?? "", max: totals?.mx ?? "" },
     columns,
@@ -454,6 +480,7 @@ export async function exploreSchema(client: ClickHouseClient): Promise<SchemaCon
             database: d.database,
             name: d.name,
             totalRows: d.totalRows,
+            sortingKey: d.sortingKey,
             preferredDateColumn:
               fqName === priority ? config.dataset.dateColumn : undefined,
             deep: fqName === priority,

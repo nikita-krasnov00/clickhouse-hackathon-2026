@@ -279,9 +279,15 @@ const SQL_RULES = `## SQL rules (mandatory)
 - ClickHouse SQL dialect only.
 - Exactly ONE read-only SELECT statement (WITH … SELECT is fine). Never INSERT/CREATE/ALTER/DROP/etc. No semicolons, no multiple statements.
 - ALWAYS end with a LIMIT: at most 1000 rows for time series, 10–50 for leaderboards/histograms.
-- The table has tens of millions of rows. Add a filter on the date column whenever the question allows one (a mentioned period, "this year", recent activity). Only scan all time when the question explicitly asks for all time.
 - Star events are rows with event_type = 'WatchEvent'. Fork = 'ForkEvent', issues = 'IssuesEvent', PRs = 'PullRequestEvent'.
 - Use only tables and columns present in the schema context. Mind the actual date range of the data.
+
+## Performance — these tables have tens/hundreds of millions of rows, write index-friendly SQL
+- Each table's "sortingKey" (ORDER BY / primary key) is in the schema context. ClickHouse's primary index only skips data when your WHERE filters a PREFIX of that key: an equality on the 1st key column, then the 2nd, etc. Filtering a column that is NOT a key prefix, or skipping over an earlier key column, forces a full scan.
+- For github_events the sortingKey is (event_type, repo_name, created_at). ALWAYS filter \`event_type\` (e.g. = 'WatchEvent') — it is the leading key and cheap. When the question is about a specific repo, ALSO filter \`repo_name = 'owner/name'\`: that hits the index directly and is near-instant.
+- A date range on \`created_at\` does NOT prune on its own here (created_at comes after repo_name in the key), so a cross-repo "top N over a period" query scans all events of that type. That is acceptable when the question genuinely spans all repos, but do not add a date filter expecting it to speed things up — filter event_type (and repo_name if given) for speed, and add the date range only because the question asks for that period.
+- Never SELECT * in an aggregation — project only the columns you use.
+- Prefer a prebuilt drill over your own SQL whenever one fits: drills run on small precomputed rollups and are instant, your SQL scans the raw fact table.
 
 ## Result-shape conventions by kind (column aliases are a hard contract)
 - timeline  → columns: t (Date/DateTime, ORDER BY t), v (number); optional series (string) to draw several lines.
@@ -306,6 +312,7 @@ Reply with ONLY a strict JSON object — no markdown fences, no explanations:
 - "xLabel"/"yLabel": scatter only — the axis names, in the language of the question.`;
 
 function buildSystemPrompt(): string {
+  // TODO: hardcoded system promt
   return [
     "You are a senior ClickHouse data engineer on «Insight Desk», investigating GitHub star-fraud (fake star campaigns) over the github_events dataset.",
     "Given the user's question, plan a small dashboard: 1–" +
