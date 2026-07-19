@@ -84,6 +84,26 @@ expectInvalid("verdict: confidence вне enum", {
   ...valid.verdict.example,
   confidence: "certain",
 });
+expectInvalid("bignumber: нет value", {
+  kind: "bignumber",
+  title: "t",
+  label: "звёзд всего",
+});
+expectInvalid("bignumber: delta — строка вместо числа", {
+  ...valid.bignumber.example,
+  delta: "+412%",
+});
+expectInvalid("scatter: x точки — строка вместо числа", {
+  ...valid.scatter.example,
+  points: [{ x: "2", y: 1, label: "star-bot-101" }],
+});
+expectInvalid("scatter: нет xLabel", {
+  kind: "scatter",
+  title: "t",
+  points: [{ x: 1, y: 2 }],
+  yLabel: "y",
+  clicks: [],
+});
 expectInvalid("неизвестный kind", { kind: "piechart", title: "t" });
 expectInvalid("строгость: лишний ключ на верхнем уровне", {
   ...valid.verdict.example,

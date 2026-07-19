@@ -7,7 +7,7 @@
  *  - action    = target.drillId есть → 'drill', нет → 'why'.
  *
  * Доступные поля элемента фиксированы по виду:
- *   point  → { t, v, series }
+ *   point  → timeline: { t, v, series }; scatter: { x, y, label? }
  *   row    → ключи columns карточки (значения row[key])
  *   bucket → { label, count }
  *   cell   → { x, y, value }
@@ -21,6 +21,7 @@ import type {
   ClickTarget,
   HeatmapCell,
   Row,
+  ScatterPoint,
   SeriesPoint,
   ViewKind,
 } from "@/lib/contracts";
@@ -64,6 +65,13 @@ export function pointElementFields(
 /** row → любой key из columns; строка и так плоская запись по этим ключам. */
 export function rowElementFields(row: Row): ClickableElementFields {
   return row;
+}
+
+/** point в scatter → x, y, label (label может отсутствовать — ключ опустится). */
+export function scatterPointElementFields(
+  point: ScatterPoint,
+): ClickableElementFields {
+  return { x: point.x, y: point.y, label: point.label };
 }
 
 /** bucket → label, count. */

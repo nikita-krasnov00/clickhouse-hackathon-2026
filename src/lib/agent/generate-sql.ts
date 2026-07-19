@@ -24,6 +24,10 @@
  *   - kind: 'heatmap'     → колонки `x` (строка), `y` (строка), `value` (число);
  *   - kind: 'verdict'     → РОВНО одна строка агрегатов; каждая колонка станет
  *                           стат-фактом evidence (алиасы — читабельный snake_case);
+ *   - kind: 'bignumber'   → РОВНО одна строка; колонка `value` (число), опц.
+ *                           `delta` (число, % к базе), `label`/`detail` (строки);
+ *   - kind: 'scatter'     → колонки `x` (число), `y` (число), опц. `label`
+ *                           (строка, имя сущности); не больше 500 точек;
  *   - kind: 'graph'       → sql-карточкам запрещён (нет сборки из строк),
  *                           доступен через дрилл costar-graph.
  *
@@ -56,6 +60,10 @@ export type GeneratedSql = {
   anomalyWindow?: [string, string];
   /** Только для histogram: подпись оси корзин. */
   bucketLabel?: string;
+  /** Только для scatter: подпись оси x. */
+  xLabel?: string;
+  /** Только для scatter: подпись оси y. */
+  yLabel?: string;
 };
 
 /** Карточка плана: свой SQL либо готовый дрилл каталога A4. */
@@ -120,6 +128,8 @@ const sqlCardSchema = z.object({
   title: z.string().min(1),
   anomalyWindow: z.tuple([z.string().min(1), z.string().min(1)]).nullish(),
   bucketLabel: z.string().nullish(),
+  xLabel: z.string().nullish(),
+  yLabel: z.string().nullish(),
 });
 
 const drillCardSchema = z.object({
@@ -155,6 +165,8 @@ function parseSqlCard(raw: unknown): PlannedCard {
     title: parsed.title.trim(),
     ...(parsed.anomalyWindow ? { anomalyWindow: parsed.anomalyWindow } : {}),
     ...(parsed.bucketLabel ? { bucketLabel: parsed.bucketLabel } : {}),
+    ...(parsed.xLabel ? { xLabel: parsed.xLabel } : {}),
+    ...(parsed.yLabel ? { yLabel: parsed.yLabel } : {}),
   };
 }
 
@@ -200,6 +212,8 @@ function parseSingleSqlAnswer(content: string): GeneratedSql {
     title: card.title,
     ...(card.anomalyWindow ? { anomalyWindow: card.anomalyWindow } : {}),
     ...(card.bucketLabel ? { bucketLabel: card.bucketLabel } : {}),
+    ...(card.xLabel ? { xLabel: card.xLabel } : {}),
+    ...(card.yLabel ? { yLabel: card.yLabel } : {}),
   };
 }
 
@@ -252,18 +266,21 @@ const SQL_RULES = `## SQL rules (mandatory)
 - histogram → columns: label (string, bucket name), count (non-negative integer), rows already in display order. Also set "bucketLabel" (axis name) in your JSON answer.
 - heatmap   → columns: x (string), y (string), value (number).
 - verdict   → EXACTLY ONE row of aggregate metrics; every column becomes an evidence stat, so alias each with a readable snake_case name. Good evidence for star-fraud: burst size vs median, share of accounts with a single event ever, concentration of stars in a few days/hours, top-day share.
+- bignumber → EXACTLY ONE row; column: value (number). Optional columns: delta (number, % change vs a baseline period, positive = growth), label (string, short caption of what value means), detail (string, secondary context line).
+- scatter   → columns: x (number), y (number); optional label (string, entity name — account/repo). LIMIT at most 500 points. Also set "xLabel" and "yLabel" (axis names) in your JSON answer.
 - graph     → only available via the costar-graph drill, never as a "sql" card.`;
 
 const OUTPUT_FORMAT = `## Output format
 Reply with ONLY a strict JSON object — no markdown fences, no explanations:
 {"cards": [
   {"tool": "drill", "drillId": "…", "params": {"repo": "owner/name"}, "title": "…"},
-  {"tool": "sql", "sql": "…", "kind": "timeline|leaderboard|histogram|heatmap|verdict", "title": "…", "anomalyWindow": ["fromISO", "toISO"], "bucketLabel": "…"}
+  {"tool": "sql", "sql": "…", "kind": "timeline|leaderboard|histogram|heatmap|verdict|bignumber|scatter", "title": "…", "anomalyWindow": ["fromISO", "toISO"], "bucketLabel": "…", "xLabel": "…", "yLabel": "…"}
 ]}
 - "cards": 1 to ${MAX_PLAN_CARDS} cards. A simple lookup question deserves exactly 1 card; an investigation («что странного…», «накручен ли…», «докажи») deserves 2–${MAX_PLAN_CARDS} complementary angles.
 - "title": a short insight headline in the same language as the user's question (also for drill cards).
 - "anomalyWindow": optional, timeline only — include it only when the question points at a suspicious window you can already name.
-- "bucketLabel": histogram only — the axis name for the buckets.`;
+- "bucketLabel": histogram only — the axis name for the buckets.
+- "xLabel"/"yLabel": scatter only — the axis names, in the language of the question.`;
 
 function buildSystemPrompt(): string {
   return [

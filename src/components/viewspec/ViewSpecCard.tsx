@@ -24,6 +24,8 @@ import { VerdictCard } from "./VerdictCard";
 import { HistogramCard } from "./HistogramCard";
 import { NetworkGraphCard } from "./NetworkGraphCard";
 import { CalendarHeatmapCard } from "./CalendarHeatmapCard";
+import { BigNumberCard } from "./BigNumberCard";
+import { ScatterCard } from "./ScatterCard";
 
 type CommonProps = {
   cardId: string;
@@ -41,7 +43,7 @@ type RendererProps<K extends ViewKind> = CommonProps & {
   spec: Extract<ViewSpec, { kind: K }>;
 };
 
-/** Реестр kind → рендерер. `satisfies` гарантирует ровно шесть видов. */
+/** Реестр kind → рендерер. `satisfies` гарантирует ровно восемь видов. */
 const RENDERERS = {
   timeline: (p: RendererProps<"timeline">) => <TimelineCard {...p} />,
   leaderboard: (p: RendererProps<"leaderboard">) => <LeaderboardCard {...p} />,
@@ -49,6 +51,8 @@ const RENDERERS = {
   graph: (p: RendererProps<"graph">) => <NetworkGraphCard {...p} />,
   heatmap: (p: RendererProps<"heatmap">) => <CalendarHeatmapCard {...p} />,
   verdict: (p: RendererProps<"verdict">) => <VerdictCard spec={p.spec} />,
+  bignumber: (p: RendererProps<"bignumber">) => <BigNumberCard spec={p.spec} />,
+  scatter: (p: RendererProps<"scatter">) => <ScatterCard {...p} />,
 } satisfies { [K in ViewKind]: (p: RendererProps<K>) => ReactNode };
 
 function renderByKind(spec: ViewSpec, common: CommonProps): ReactNode {
