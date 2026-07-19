@@ -11,6 +11,7 @@
  * Операционный лог: КАЖДАЯ попытка (включая неудачные и фоллбеки моделей)
  * пишется в scratch.llm_log — полный промпт, ответ, статус, тайминг (llm-log.ts).
  */
+import { config } from "@/lib/config";
 import { logLlmCall } from "./llm-log";
 
 export type ChatMessage = {
@@ -48,7 +49,7 @@ const MAX_TOKENS = 8_000;
 let resolvedModel: string | undefined;
 
 function candidateModels(): string[] {
-  const first = resolvedModel ?? (process.env.LLM_MODEL?.trim() || undefined);
+  const first = resolvedModel ?? config.llm.model;
   if (!first) return [...MODEL_FALLBACKS];
   return [first, ...MODEL_FALLBACKS.filter((m) => m !== first)];
 }
@@ -65,10 +66,8 @@ async function attemptOnce(
   model: string,
   messages: ChatMessage[],
 ): Promise<AttemptResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY не задан — см. .env");
-  }
+  // Валидация группы LLM конфига — понятная ошибка, если ключ не задан.
+  const { apiKey } = config.llm;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);

@@ -16,6 +16,7 @@
  */
 import type { ClickHouseClient } from "@clickhouse/client";
 import { createReadonlyClient, createScratchClient } from "@/lib/clickhouse";
+import { config } from "@/lib/config";
 
 // ---------------------------------------------------------------------------
 // Форма контекста
@@ -53,17 +54,23 @@ type TableTarget = {
   keyColumns: { column: string; topN: number }[];
 };
 
-const TARGET_TABLES: TableTarget[] = [
-  {
-    table: "github.github_events",
-    dateColumn: "created_at",
-    keyColumns: [
-      { column: "event_type", topN: 25 },
-      { column: "repo_name", topN: 50 },
-      { column: "actor_login", topN: 50 },
-    ],
-  },
-];
+/**
+ * Целевые таблицы: имя и колонка даты — из конфигурации проекта
+ * (GITHUB_EVENTS_TABLE / GITHUB_EVENTS_DATE_COLUMN в .env, с дефолтами).
+ */
+function targetTables(): TableTarget[] {
+  return [
+    {
+      table: config.dataset.githubEventsTable,
+      dateColumn: config.dataset.dateColumn,
+      keyColumns: [
+        { column: "event_type", topN: 25 },
+        { column: "repo_name", topN: 50 },
+        { column: "actor_login", topN: 50 },
+      ],
+    },
+  ];
+}
 
 /** Временный стенд, пока слайс github_events не долит трек A. */
 const FALLBACK_TABLE: TableTarget = {
@@ -191,7 +198,7 @@ async function exploreTable(
  */
 export async function exploreSchema(client: ClickHouseClient): Promise<SchemaContext[]> {
   const contexts: SchemaContext[] = [];
-  for (const target of TARGET_TABLES) {
+  for (const target of targetTables()) {
     if (await tableExists(client, target.table)) {
       contexts.push(await exploreTable(client, target));
     }

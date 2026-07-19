@@ -2,9 +2,10 @@ import { defineConfig } from "@trigger.dev/sdk";
 
 export default defineConfig({
   // Project ref из дашборда Trigger.dev cloud (Project settings → Project ref).
-  // Хардкод — канон: конфиг читается CLI и при деплое, когда .env может быть недоступен.
+  // Приоритет — env (TRIGGER_PROJECT_REF из .env); хардкод остаётся фоллбеком,
+  // потому что конфиг читается CLI и при деплое, когда .env может быть недоступен.
   // TRIGGER_SECRET_KEY сюда не пишем — он подхватывается из env (.env локально).
-  project: "proj_pqzjoyqabftwlurtatuy",
+  project: process.env.TRIGGER_PROJECT_REF ?? "proj_pqzjoyqabftwlurtatuy",
   dirs: ["./src/trigger"],
   runtime: "node",
   logLevel: "info",
