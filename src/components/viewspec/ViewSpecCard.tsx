@@ -30,6 +30,13 @@ type CommonProps = {
   onClickContext?: (ctx: ClickContext) => void;
 };
 
+/**
+ * Наружу ViewSpecCard отдаёт клик вместе с провалидированным спеком (C6):
+ * обработчику ленты нужен ClickTarget.drillId, а ClickContext его не несёт —
+ * лента находит цель в spec.clicks по виду элемента.
+ */
+export type SpecClickHandler = (ctx: ClickContext, spec: ViewSpec) => void;
+
 type RendererProps<K extends ViewKind> = CommonProps & {
   spec: Extract<ViewSpec, { kind: K }>;
 };
@@ -119,7 +126,11 @@ export function ViewSpecCard({
   cardId,
   spec,
   onClickContext,
-}: CommonProps & { spec: unknown }) {
+}: {
+  cardId: string;
+  spec: unknown;
+  onClickContext?: SpecClickHandler;
+}) {
   const parsed = viewSpecSchema.safeParse(spec);
   if (!parsed.success) {
     return <FallbackCard spec={spec} error={parsed.error.message} />;
@@ -132,7 +143,10 @@ export function ViewSpecCard({
       title={isVerdict ? "Вердикт расследования" : v.title}
       accent={isVerdict}
     >
-      {renderByKind(v, { cardId, onClickContext })}
+      {renderByKind(v, {
+        cardId,
+        onClickContext: onClickContext ? (ctx) => onClickContext(ctx, v) : undefined,
+      })}
     </CardShell>
   );
 }

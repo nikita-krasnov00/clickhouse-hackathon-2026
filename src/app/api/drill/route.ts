@@ -1,15 +1,18 @@
 /**
- * B7 — POST /api/drill: быстрый путь без LLM (каркас для C6/A4).
+ * A4/C6 — POST /api/drill: быстрый путь клика без LLM.
  *
- * Тело: drillRequestSchema { drillId, params }. Каталог drillId и
- * параметризованные запросы делает трек A (задача A4) — до тех пор роут
- * честно отвечает 501, чтобы C6 мог сверстать обработку заранее.
+ * Тело: drillRequestSchema { drillId, params } (params = ClickContext.selection).
+ * Каталог — src/lib/drills; SQL параметризованный, исполнение под agent_ro,
+ * скорость на роллапах scratch.* (db/a4_rollups.sh).
  *
- * Формат будущего успешного ответа (200): drillResponseSchema { viewSpec }.
- * Ошибки: 400 — мусор на входе (с zod-деталями), 501 — каталог ещё не готов.
+ * Ответы: 200 drillResponseSchema { viewSpec } (+ X-Drill-Ms — тайминг);
+ * 400 мусор на входе; 404 неизвестный drillId; 422 параметры не подходят
+ * каталогу; 500 сбой исполнения.
  */
 import { NextResponse } from "next/server";
-import { drillRequestSchema } from "@/lib/contracts";
+import { createReadonlyClient } from "@/lib/clickhouse";
+import { drillRequestSchema, drillResponseSchema } from "@/lib/contracts";
+import { DrillParamsError, UnknownDrillError, resolveDrill } from "@/lib/drills";
 
 export const runtime = "nodejs";
 
@@ -31,11 +34,43 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  const { drillId, params } = parsed.data;
 
-  // TODO(A4/C6): найти drillId в каталоге, выполнить параметризованный SQL
-  // под agent_ro и вернуть drillResponseSchema.parse({ viewSpec }).
-  return NextResponse.json(
-    { error: "drill catalog появится в A4" },
-    { status: 501 },
-  );
+  let def;
+  try {
+    def = resolveDrill(drillId);
+  } catch (err) {
+    if (err instanceof UnknownDrillError) {
+      return NextResponse.json({ error: err.message }, { status: 404 });
+    }
+    throw err;
+  }
+
+  const parsedParams = def.params.safeParse(params);
+  if (!parsedParams.success) {
+    return NextResponse.json(
+      { error: `Параметры не подходят дриллу ${drillId}`, issues: parsedParams.error.issues },
+      { status: 422 },
+    );
+  }
+
+  const client = createReadonlyClient();
+  const t0 = Date.now();
+  try {
+    const viewSpec = await def.execute(client, parsedParams.data);
+    return NextResponse.json(drillResponseSchema.parse({ viewSpec }), {
+      headers: { "X-Drill-Ms": String(Date.now() - t0) },
+    });
+  } catch (err) {
+    if (err instanceof DrillParamsError) {
+      return NextResponse.json({ error: err.message }, { status: 422 });
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { error: `Дрилл ${drillId} не выполнился: ${message}` },
+      { status: 500 },
+    );
+  } finally {
+    await client.close();
+  }
 }
