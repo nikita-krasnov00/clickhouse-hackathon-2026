@@ -51,7 +51,11 @@ async function main() {
                   ? `${spec.cells.length} ячеек`
                   : spec.kind === "histogram"
                     ? `${spec.buckets.length} корзин`
-                    : `${spec.evidence.length} улик`;
+                    : spec.kind === "scatter"
+                      ? `${spec.points.length} точек`
+                      : spec.kind === "bignumber"
+                        ? `значение ${spec.value}`
+                        : `${spec.evidence.length} улик`;
         const over = ms > 300 ? "  ⚠ >300мс" : "";
         console.log(
           `OK   ${c.drillId.padEnd(40)} ${String(ms).padStart(5)} мс  ${spec.kind}: ${size}${over}`,

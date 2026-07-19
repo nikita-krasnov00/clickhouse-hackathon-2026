@@ -184,6 +184,48 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
       ],
     },
   },
+  bignumber: {
+    kind: "bignumber",
+    summary: "Single large KPI: one value with a label, optional % delta and detail caption.",
+    whenToUse:
+      "The answer is ONE number: total stars of a repo, share of bot accounts, count of suspicious repos. Prefer it over a one-row leaderboard. Add delta only when there is a meaningful baseline to compare against (previous period, median).",
+    dataShape:
+      "value: number or pre-formatted string ('84%', '×70'); label: what the number means; delta: optional number, % change vs baseline (positive renders green, negative red); detail: optional secondary caption. No clicks field.",
+    example: {
+      kind: "bignumber",
+      title: "Звёзды acme/turbo-widget за 14 дней",
+      value: 1803,
+      label: "звёзд за последние 14 дней",
+      delta: 412.5,
+      detail: "против медианы 87 звёзд в неделю",
+    },
+  },
+  scatter: {
+    kind: "scatter",
+    summary: "Scatter plot: entities as points on two numeric axes.",
+    whenToUse:
+      "The question is about a relationship between two numeric properties of many entities: account age vs stars given, events per account vs repos starred. Bot farms show up as tight visual clusters. Keep at most 500 points.",
+    dataShape:
+      "points: [{x: number, y: number, label?: string (entity name)}], ≤ 500 points; xLabel/yLabel: axis names. clicks: targets with on:'point', selectable fields 'x', 'y', 'label'.",
+    example: {
+      kind: "scatter",
+      title: "Возраст аккаунта vs звёзд за день: кто звездил 2 марта",
+      points: [
+        { x: 2, y: 1, label: "star-bot-101" },
+        { x: 3, y: 1, label: "star-bot-102" },
+        { x: 1240, y: 34, label: "real-contributor" },
+      ],
+      xLabel: "Возраст аккаунта, дни",
+      yLabel: "Звёзд поставлено 2 марта",
+      clicks: [
+        {
+          on: "point",
+          selectionKeys: ["label"],
+          label: "Что это за аккаунт?",
+        },
+      ],
+    },
+  },
 };
 
 /**

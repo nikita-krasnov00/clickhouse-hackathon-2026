@@ -21,6 +21,8 @@ export const VIEW_KINDS = [
   "graph",
   "heatmap",
   "verdict",
+  "bignumber",
+  "scatter",
 ] as const;
 
 export const viewKindSchema = z.enum(VIEW_KINDS);
@@ -43,7 +45,7 @@ export const dateTimeStringSchema = z
 //   { on, selectionKeys, drillId?, label? }
 //
 //  - `on` — класс элемента, к которому применяется цель:
-//      'point'  → точка серии в timeline
+//      'point'  → точка серии в timeline или точка scatter
 //      'row'    → строка leaderboard
 //      'bucket' → корзина histogram
 //      'cell'   → ячейка heatmap
@@ -51,7 +53,9 @@ export const dateTimeStringSchema = z
 //  - `selectionKeys` — имена полей кликнутого элемента, которые UI копирует в
 //    ClickContext.selection ПОД ТЕМИ ЖЕ ИМЕНАМИ. Доступные поля фиксированы
 //    по виду элемента:
-//      point  → 't', 'v', а также 'series' (имя серии, содержащей точку)
+//      point  → в timeline: 't', 'v', а также 'series' (имя серии с точкой);
+//               в scatter: 'x', 'y', 'label' (label может отсутствовать —
+//               тогда ключ опускается)
 //      row    → любой `key` из columns карточки (значение берётся из row[key];
 //               null-значения в selection не попадают — ключ опускается)
 //      bucket → 'label', 'count'
@@ -146,6 +150,15 @@ export const heatmapCellSchema = z.strictObject({
 });
 export type HeatmapCell = z.infer<typeof heatmapCellSchema>;
 
+/** Точка scatter: числовые координаты + опциональное имя сущности. */
+export const scatterPointSchema = z.strictObject({
+  x: z.number(),
+  y: z.number(),
+  /** Имя сущности за точкой (аккаунт, репо) — уходит в тултип и selection. */
+  label: z.string().optional(),
+});
+export type ScatterPoint = z.infer<typeof scatterPointSchema>;
+
 export const statSchema = z.strictObject({
   label: z.string(),
   value: z.union([z.string(), z.number()]),
@@ -215,13 +228,37 @@ export const verdictSpecSchema = z.strictObject({
 });
 export type VerdictSpec = z.infer<typeof verdictSpecSchema>;
 
+export const bigNumberSpecSchema = z.strictObject({
+  kind: z.literal("bignumber"),
+  title: z.string(),
+  /** Само значение KPI — число или готовая строка («84%», «×70»). */
+  value: z.union([z.string(), z.number()]),
+  /** Подпись метрики под значением. */
+  label: z.string(),
+  /** Изменение в % к базе: > 0 — рост (зелёный), < 0 — падение (красный). */
+  delta: z.number().optional(),
+  /** Вторичная подпись-контекст («против медианы 87 звёзд в неделю»). */
+  detail: z.string().optional(),
+});
+export type BigNumberSpec = z.infer<typeof bigNumberSpecSchema>;
+
+export const scatterSpecSchema = z.strictObject({
+  kind: z.literal("scatter"),
+  title: z.string(),
+  points: z.array(scatterPointSchema),
+  xLabel: z.string(),
+  yLabel: z.string(),
+  clicks: z.array(clickTargetSchema),
+});
+export type ScatterSpec = z.infer<typeof scatterSpecSchema>;
+
 // ---------------------------------------------------------------------------
 // Дискриминированное объединение
 // ---------------------------------------------------------------------------
 
 /**
  * Схема каждого вида по ключу — для точечной валидации и рендер-реестра.
- * `satisfies Record<ViewKind, …>` гарантирует: ровно шесть видов, без пропусков.
+ * `satisfies Record<ViewKind, …>` гарантирует: ровно восемь видов, без пропусков.
  */
 export const viewSpecSchemaByKind = {
   timeline: timelineSpecSchema,
@@ -230,6 +267,8 @@ export const viewSpecSchemaByKind = {
   graph: graphSpecSchema,
   heatmap: heatmapSpecSchema,
   verdict: verdictSpecSchema,
+  bignumber: bigNumberSpecSchema,
+  scatter: scatterSpecSchema,
 } as const satisfies Record<ViewKind, z.ZodType>;
 
 export const viewSpecSchema = z.discriminatedUnion("kind", [
@@ -239,5 +278,7 @@ export const viewSpecSchema = z.discriminatedUnion("kind", [
   graphSpecSchema,
   heatmapSpecSchema,
   verdictSpecSchema,
+  bigNumberSpecSchema,
+  scatterSpecSchema,
 ]);
 export type ViewSpec = z.infer<typeof viewSpecSchema>;

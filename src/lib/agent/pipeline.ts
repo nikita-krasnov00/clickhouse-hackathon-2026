@@ -255,6 +255,75 @@ function buildViewSpec(
         evidence,
       };
     }
+    case "bignumber": {
+      // Конвенция: РОВНО одна строка, колонка `value` (+ опц. delta/label/detail).
+      if (rows.length !== 1) {
+        throw new Error(
+          `bignumber-SQL обязан возвращать РОВНО одну строку — получено ${rows.length}`,
+        );
+      }
+      const row = rows[0];
+      requireColumns(row, "bignumber", ["value"]);
+      const value = toCell(row.value);
+      if (value === null) {
+        throw new Error("bignumber-SQL: колонка `value` не должна быть NULL");
+      }
+      const delta = row.delta != null ? Number(row.delta) : undefined;
+      if (delta !== undefined && !Number.isFinite(delta)) {
+        throw new Error(
+          "bignumber-SQL: колонка `delta` обязана быть числом — процент изменения к базе",
+        );
+      }
+      return {
+        kind: "bignumber",
+        title: generated.title,
+        value,
+        // Подпись метрики — из колонки `label`, иначе титул карточки.
+        label:
+          row.label != null && row.label !== "" ? String(row.label) : generated.title,
+        ...(delta !== undefined ? { delta } : {}),
+        ...(row.detail != null && row.detail !== ""
+          ? { detail: String(row.detail) }
+          : {}),
+      };
+    }
+    case "scatter": {
+      // Конвенция: колонки `x`, `y` — числа, опц. `label` — имя сущности.
+      const points = rows.map((row) => {
+        requireColumns(row, "scatter", ["x", "y"]);
+        const px = Number(row.x);
+        const py = Number(row.y);
+        if (!Number.isFinite(px) || !Number.isFinite(py)) {
+          throw new Error(
+            "scatter-SQL: колонки `x` и `y` обязаны быть числами (числовые метрики точки)",
+          );
+        }
+        return {
+          x: px,
+          y: py,
+          ...(row.label != null && row.label !== ""
+            ? { label: String(row.label) }
+            : {}),
+        };
+      });
+      const hasLabels = points.some((p) => "label" in p);
+      // Без drillId: клик по точке уходит в новый ран агента (action 'why').
+      const clicks: ClickTarget[] = [
+        {
+          on: "point",
+          selectionKeys: hasLabels ? ["label", "x", "y"] : ["x", "y"],
+          label: "Разобраться с этой точкой",
+        },
+      ];
+      return {
+        kind: "scatter",
+        title: generated.title,
+        points,
+        xLabel: generated.xLabel ?? "x",
+        yLabel: generated.yLabel ?? "y",
+        clicks,
+      };
+    }
     default:
       // graph — до C5 (рендер) и B6 (temp tables под ко-старинг) не поддержан.
       throw new Error(

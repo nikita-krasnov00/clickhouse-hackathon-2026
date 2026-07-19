@@ -19,6 +19,10 @@
  *   - kind: 'heatmap'     → колонки `x` (строка), `y` (строка), `value` (число);
  *   - kind: 'verdict'     → РОВНО одна строка агрегатов; каждая колонка станет
  *                           стат-фактом evidence (алиасы — читабельный snake_case);
+ *   - kind: 'bignumber'   → РОВНО одна строка; колонка `value` (число), опц.
+ *                           `delta` (число, % к базе), `label`/`detail` (строки);
+ *   - kind: 'scatter'     → колонки `x` (число), `y` (число), опц. `label`
+ *                           (строка, имя сущности); не больше 500 точек;
  *   - kind: 'graph'       → не поддержан до C5/B6, модели запрещён.
  *
  * Здесь же: healSql() — починка упавшего SQL по тексту ошибки ClickHouse (B5),
@@ -49,6 +53,10 @@ export type GeneratedSql = {
   anomalyWindow?: [string, string];
   /** Только для histogram: подпись оси корзин. */
   bucketLabel?: string;
+  /** Только для scatter: подпись оси x. */
+  xLabel?: string;
+  /** Только для scatter: подпись оси y. */
+  yLabel?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -97,6 +105,8 @@ const llmAnswerSchema = z.object({
   title: z.string().min(1),
   anomalyWindow: z.tuple([z.string().min(1), z.string().min(1)]).nullish(),
   bucketLabel: z.string().nullish(),
+  xLabel: z.string().nullish(),
+  yLabel: z.string().nullish(),
 });
 
 /** Срезает reasoning-блоки и markdown-фенсы, выделяет JSON-объект. */
@@ -122,6 +132,8 @@ function parseLlmAnswer(content: string): GeneratedSql {
     title: parsed.title.trim(),
     ...(parsed.anomalyWindow ? { anomalyWindow: parsed.anomalyWindow } : {}),
     ...(parsed.bucketLabel ? { bucketLabel: parsed.bucketLabel } : {}),
+    ...(parsed.xLabel ? { xLabel: parsed.xLabel } : {}),
+    ...(parsed.yLabel ? { yLabel: parsed.yLabel } : {}),
   };
 }
 
@@ -167,14 +179,17 @@ const SQL_RULES = `## SQL rules (mandatory)
 - histogram → columns: label (string, bucket name), count (non-negative integer), rows already in display order. Also set "bucketLabel" (axis name) in your JSON answer.
 - heatmap   → columns: x (string), y (string), value (number).
 - verdict   → EXACTLY ONE row of aggregate metrics; every column becomes an evidence stat, so alias each with a readable snake_case name. Good evidence for star-fraud: burst size vs median, share of accounts with a single event ever, concentration of stars in a few days/hours, top-day share.
+- bignumber → EXACTLY ONE row; column: value (number). Optional columns: delta (number, % change vs a baseline period, positive = growth), label (string, short caption of what value means), detail (string, secondary context line).
+- scatter   → columns: x (number), y (number); optional label (string, entity name — account/repo). LIMIT at most 500 points. Also set "xLabel" and "yLabel" (axis names) in your JSON answer.
 - graph     → NOT supported yet, never choose it.`;
 
 const OUTPUT_FORMAT = `## Output format
 Reply with ONLY a strict JSON object — no markdown fences, no explanations:
-{"sql": "…", "kind": "timeline|leaderboard|histogram|heatmap|verdict", "title": "…", "anomalyWindow": ["fromISO", "toISO"], "bucketLabel": "…"}
+{"sql": "…", "kind": "timeline|leaderboard|histogram|heatmap|verdict|bignumber|scatter", "title": "…", "anomalyWindow": ["fromISO", "toISO"], "bucketLabel": "…", "xLabel": "…", "yLabel": "…"}
 - "title": a short insight headline in the same language as the user's question.
 - "anomalyWindow": optional, timeline only — include it only when the question points at a suspicious window you can already name.
-- "bucketLabel": histogram only — the axis name for the buckets.`;
+- "bucketLabel": histogram only — the axis name for the buckets.
+- "xLabel"/"yLabel": scatter only — the axis names, in the language of the question.`;
 
 function buildSystemPrompt(): string {
   return [

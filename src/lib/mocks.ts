@@ -1,9 +1,10 @@
 /**
  * Мок-спеки для ленты (C3): по одному правдоподобному ViewSpec каждого из
- * шести kind в сюжете расследования накрутки звёзд. Форма — строго по
+ * восьми kind в сюжете расследования накрутки звёзд. Форма — строго по
  * контрактам (за основу взяты примеры VIEW_SPEC_CATALOG); порядок в
  * MOCK_FEED повторяет драматургию демо: топ подозрительных → таймлайн
- * всплеска → возраст аккаунтов → регулярность → кластер → вердикт.
+ * всплеска → KPI всплеска → возраст аккаунтов → возраст×активность →
+ * регулярность → кластер → вердикт.
  *
  * Живые данные заменят это в B3/C2 (Realtime) и C6 (клики → API).
  */
@@ -92,6 +93,16 @@ const timeline: ViewSpec = {
   ],
 };
 
+/** KPI всплеска: одно число крупно + дельта к медиане прошлых недель. */
+const bignumber: ViewSpec = {
+  kind: "bignumber",
+  title: "Звёзды acme/turbo-widget за 14 дней",
+  value: 1766,
+  label: "звёзд за последние 14 дней",
+  delta: 412.5,
+  detail: "против медианы 87 звёзд в неделю до всплеска",
+};
+
 const histogram: ViewSpec = {
   kind: "histogram",
   title: "Возраст аккаунтов, ставивших звёзды 2–3 марта",
@@ -110,6 +121,45 @@ const histogram: ViewSpec = {
       selectionKeys: ["label"],
       drillId: "accounts-by-age-bucket",
       label: "Аккаунты из этой корзины",
+    },
+  ],
+};
+
+/**
+ * Scatter «возраст аккаунта × звёзд за день»: ферма ботов — плотный кластер
+ * свежих аккаунтов у нуля по обеим осям, легитимные — редкие точки справа.
+ */
+const scatter: ViewSpec = {
+  kind: "scatter",
+  title: "Возраст аккаунта vs событий за всё время: кто звездил 2 марта",
+  points: [
+    // Кластер фермы: аккаунты моложе недели, 1–3 события за всю жизнь
+    { x: 1, y: 1, label: "star-bot-101" },
+    { x: 1, y: 2, label: "star-bot-102" },
+    { x: 2, y: 1, label: "star-bot-103" },
+    { x: 2, y: 2, label: "star-bot-104" },
+    { x: 3, y: 1, label: "fresh-dev-2024" },
+    { x: 3, y: 3, label: "gh-user-77812" },
+    { x: 4, y: 1, label: "gh-user-77813" },
+    { x: 4, y: 2, label: "nightly-star" },
+    { x: 5, y: 1, label: "hello-world-9921" },
+    { x: 5, y: 2, label: "hello-world-9922" },
+    { x: 6, y: 1, label: "dev-acc-swarm-1" },
+    { x: 6, y: 3, label: "dev-acc-swarm-2" },
+    { x: 7, y: 2, label: "new-coder-0301" },
+    // Легитимные: старые аккаунты с богатой историей событий
+    { x: 420, y: 184, label: "real-contributor" },
+    { x: 2870, y: 960, label: "oss-fan-2016" },
+    { x: 1240, y: 312, label: "weekend-hacker" },
+    { x: 760, y: 95, label: "casual-oss-user" },
+  ],
+  xLabel: "Возраст аккаунта, дни",
+  yLabel: "Событий за всё время",
+  clicks: [
+    {
+      on: "point",
+      selectionKeys: ["label", "x", "y"],
+      label: "Что это за аккаунт?",
     },
   ],
 };
@@ -253,7 +303,9 @@ const verdict: ViewSpec = {
 export const MOCK_FEED: MockCard[] = [
   { cardId: "mock-leaderboard-01", spec: leaderboard },
   { cardId: "mock-timeline-02", spec: timeline },
+  { cardId: "mock-bignumber-02b", spec: bignumber },
   { cardId: "mock-histogram-03", spec: histogram },
+  { cardId: "mock-scatter-03b", spec: scatter },
   { cardId: "mock-heatmap-04", spec: heatmap },
   { cardId: "mock-graph-05", spec: graph },
   { cardId: "mock-verdict-06", spec: verdict },
