@@ -19,12 +19,14 @@
  *     либо по LIMIT-сэмплу — чтобы уложиться в 30-сек таймаут agent_ro;
  *   - count()/min/max даты и 3 сэмпл-строки — как раньше.
  *
- * Результат кэшируется в scratch.schema_context (ReplacingMergeTree по table:
- * перезапуск просто обновляет строку). Контекст читает конвейер investigate
- * (шаг exploring, см. pipeline.ts) и промпт text-to-SQL (B4).
+ * Персистентного кэша НЕТ: вся информация и так живёт в ClickHouse, поэтому
+ * exploration выполняется живьём на каждый ран (см. getSchemaContext — только
+ * короткая мемоизация в памяти процесса, чтобы параллельные раны не дублировали
+ * одинаковые запросы). Контекст читает конвейер investigate (шаг exploring,
+ * pipeline.ts) и промпт text-to-SQL (B4).
  */
 import type { ClickHouseClient } from "@clickhouse/client";
-import { createReadonlyClient, createScratchClient } from "@/lib/clickhouse";
+import { createReadonlyClient } from "@/lib/clickhouse";
 import { config } from "@/lib/config";
 
 // ---------------------------------------------------------------------------
@@ -64,6 +66,8 @@ const MAX_TABLES = 5;
 const MAX_KEY_COLUMNS = 3;
 /** Сколько топ-значений собираем по каждой ключевой колонке. */
 const KEY_TOP_N = 30;
+/** Сколько таблиц исследуем одновременно (см. комментарий в exploreSchema). */
+const EXPLORE_CONCURRENCY = 2;
 /** С этого размера uniq считаем не по всей таблице, а по окну/сэмплу. */
 const BIG_TABLE_ROWS = 10_000_000;
 /** Окно «последнего доступного периода» для uniq на больших таблицах. */
@@ -75,10 +79,8 @@ const LOW_UNIQ_THRESHOLD = 200;
 
 /** Системные базы — не таблицы данных. */
 const SYSTEM_DATABASES = ["system", "information_schema", "INFORMATION_SCHEMA"];
-/** Служебные базы проекта (роллапы, кэши) — прячем от LLM. */
+/** Служебные базы проекта (роллапы, лог LLM) — прячем от LLM. */
 const HIDDEN_DATABASES = ["scratch"];
-
-export const SCHEMA_CONTEXT_TABLE = "scratch.schema_context";
 
 // ---------------------------------------------------------------------------
 // Обнаружение таблиц
@@ -306,6 +308,13 @@ type TableTarget = {
   totalRows: number;
   /** Переопределение колонки даты (конфиг приоритетной таблицы). */
   preferredDateColumn?: string;
+  /**
+   * Глубокое исследование (топ-N значений, кардинальности) — только для
+   * приоритетной таблицы: это самые дорогие запросы, а exploration живёт
+   * на каждом ране. Второстепенным таблицам хватает колонок, диапазона дат
+   * и сэмплов — LLM сможет их запрашивать, просто без готовой статистики.
+   */
+  deep: boolean;
 };
 
 async function exploreTable(
@@ -319,60 +328,76 @@ async function exploreTable(
   }
   const dateColumn = pickDateColumn(columns, target.preferredDateColumn);
 
-  // count() + min/max даты — одним сканом (если колонки даты нет — только count).
-  const totalsRs = await client.query({
-    query: dateColumn
-      ? `SELECT count() AS c, min(\`${dateColumn}\`) AS mn, max(\`${dateColumn}\`) AS mx FROM ${target.table}`
-      : `SELECT count() AS c FROM ${target.table}`,
-    format: "JSONEachRow",
-  });
-  const totals = (await totalsRs.json<{ c: string; mn?: string; mx?: string }>())[0];
+  // Дальше все независимые стадии — ПАРАЛЛЕЛЬНО (латентность = максимум, не
+  // сумма стадий): min/max даты (→ кардинальности по окну), топ-N значений,
+  // сэмпл-строки. count() не нужен — total_rows из system.tables бесплатен.
+  //
+  // Топ-N: на больших таблицах точный GROUP BY по высококардинальной колонке
+  // (repo_name — 35M уникальных) строит хэш на гигабайты и ловит
+  // MEMORY_LIMIT_EXCEEDED — там берём approx_top_count: алгоритм space-saving
+  // с ограниченной памятью, частоты приближённые, но промпту LLM хватает.
+  // Кардинальности — оценки по окну/сэмплу, на больших таблицах занижают,
+  // поэтому поднимаем их минимум до числа топ-значений.
+  const minMaxPromise: Promise<{ mn?: string; mx?: string } | undefined> = dateColumn
+    ? client
+        .query({
+          query: `SELECT min(\`${dateColumn}\`) AS mn, max(\`${dateColumn}\`) AS mx FROM ${target.table}`,
+          format: "JSONEachRow",
+        })
+        .then(async (rs) => (await rs.json<{ mn?: string; mx?: string }>())[0])
+    : Promise.resolve(undefined);
 
-  // Ключевые низкокардинальные колонки; сначала топ-N значений (полный скан,
-  // как раньше), затем кардинальности — оценки по окну/сэмплу на больших
-  // таблицах занижают, поэтому поднимаем их минимум до числа топ-значений.
-  const keyColumnNames = await pickKeyColumns(client, target.table, columns);
-  const tops: TopValue[][] = [];
-  for (const column of keyColumnNames) {
-    const topRs = await client.query({
-      query: `SELECT toString(\`${column}\`) AS v, count() AS n FROM ${target.table} GROUP BY v ORDER BY n DESC LIMIT ${KEY_TOP_N}`,
-      format: "JSONEachRow",
-    });
-    tops.push(
-      (await topRs.json<{ v: string; n: string | number }>()).map((r) => ({
-        v: r.v,
-        n: Number(r.n),
-      })),
-    );
-  }
-  const cardinalities = await keyColumnCardinalities(
-    client,
-    {
-      table: target.table,
-      totalRows: target.totalRows,
-      dateColumn,
-      dateMax: totals?.mx ?? "",
-    },
-    keyColumnNames,
-  );
-  const keyColumns: KeyColumnStats[] = keyColumnNames.map((column, i) => ({
-    column,
-    cardinality: Math.max(cardinalities[i] ?? 0, tops[i].length),
-    top: tops[i],
-  }));
+  const samplesPromise = client
+    .query({ query: `SELECT * FROM ${target.table} LIMIT 3`, format: "JSONEachRow" })
+    .then(async (rs) => (await rs.json<Record<string, unknown>>()).map(compactSampleRow));
 
-  // 3 сэмпл-строки.
-  const sampleRs = await client.query({
-    query: `SELECT * FROM ${target.table} LIMIT 3`,
-    format: "JSONEachRow",
-  });
-  const sampleRows = (await sampleRs.json<Record<string, unknown>>()).map(
-    compactSampleRow,
-  );
+  const keyColumnsPromise: Promise<KeyColumnStats[]> = target.deep
+    ? (async () => {
+        const keyColumnNames = await pickKeyColumns(client, target.table, columns);
+        const big = target.totalRows > BIG_TABLE_ROWS;
+        const topsPromise = Promise.all(
+          keyColumnNames.map(async (column) => {
+            const query = big
+              ? `SELECT tupleElement(t, 1) AS v, tupleElement(t, 2) AS n
+                 FROM (SELECT arrayJoin(approx_top_count(${KEY_TOP_N})(toString(\`${column}\`))) AS t FROM ${target.table})`
+              : `SELECT toString(\`${column}\`) AS v, count() AS n FROM ${target.table} GROUP BY v ORDER BY n DESC LIMIT ${KEY_TOP_N}`;
+            const topRs = await client.query({ query, format: "JSONEachRow" });
+            return (await topRs.json<{ v: string; n: string | number }>()).map((r) => ({
+              v: r.v,
+              n: Number(r.n),
+            }));
+          }),
+        );
+        const cardinalitiesPromise = minMaxPromise.then((mm) =>
+          keyColumnCardinalities(
+            client,
+            {
+              table: target.table,
+              totalRows: target.totalRows,
+              dateColumn,
+              dateMax: mm?.mx ?? "",
+            },
+            keyColumnNames,
+          ),
+        );
+        const [tops, cardinalities] = await Promise.all([topsPromise, cardinalitiesPromise]);
+        return keyColumnNames.map((column, i) => ({
+          column,
+          cardinality: Math.max(cardinalities[i] ?? 0, tops[i].length),
+          top: tops[i],
+        }));
+      })()
+    : Promise.resolve([]);
+
+  const [totals, sampleRows, keyColumns] = await Promise.all([
+    minMaxPromise,
+    samplesPromise,
+    keyColumnsPromise,
+  ]);
 
   return {
     table: target.table,
-    rowCount: Number(totals?.c ?? 0),
+    rowCount: target.totalRows,
     dateColumn,
     dateRange: { min: totals?.mn ?? "", max: totals?.mx ?? "" },
     columns,
@@ -409,26 +434,39 @@ export async function exploreSchema(client: ClickHouseClient): Promise<SchemaCon
     );
   }
 
-  const contexts: SchemaContext[] = [];
-  for (const d of ordered) {
-    const fqName = `${d.database}.${d.name}`;
-    try {
-      contexts.push(
-        await exploreTable(client, {
-          table: fqName,
-          database: d.database,
-          name: d.name,
-          totalRows: d.totalRows,
-          preferredDateColumn:
-            fqName === priority ? config.dataset.dateColumn : undefined,
-        }),
-      );
-    } catch (err) {
-      console.warn(
-        `exploreSchema: пропускаю ${fqName}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
+  // Таблицы исследуются параллельно, но с ОГРАНИЧЕННОЙ конкурентностью:
+  // безлимитный Promise.all даёт всплеск из ~15 тяжёлых запросов на один
+  // клиент — ClickHouse Cloud под нагрузкой рвёт соединения (ECONNRESET).
+  // Пул в EXPLORE_CONCURRENCY воркеров держит латентность ~максимума по
+  // таблице, не устраивая шторм.
+  const settled: (SchemaContext | undefined)[] = new Array(ordered.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(EXPLORE_CONCURRENCY, ordered.length) }, async () => {
+      for (;;) {
+        const i = next++;
+        if (i >= ordered.length) return;
+        const d = ordered[i];
+        const fqName = `${d.database}.${d.name}`;
+        try {
+          settled[i] = await exploreTable(client, {
+            table: fqName,
+            database: d.database,
+            name: d.name,
+            totalRows: d.totalRows,
+            preferredDateColumn:
+              fqName === priority ? config.dataset.dateColumn : undefined,
+            deep: fqName === priority,
+          });
+        } catch (err) {
+          console.warn(
+            `exploreSchema: пропускаю ${fqName}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }),
+  );
+  const contexts = settled.filter((c): c is SchemaContext => c !== undefined);
   if (contexts.length === 0) {
     throw new Error("exploreSchema: не удалось исследовать ни одну обнаруженную таблицу");
   }
@@ -436,66 +474,42 @@ export async function exploreSchema(client: ClickHouseClient): Promise<SchemaCon
 }
 
 // ---------------------------------------------------------------------------
-// Персист в scratch.schema_context
+// Мемоизация в процессе
 // ---------------------------------------------------------------------------
 
 /**
- * Кэш контекста: ReplacingMergeTree(updated_at) ORDER BY table — повторный
- * запуск exploration просто обновляет строку таблицы, TTL не нужен.
+ * ЕДИНСТВЕННЫЙ «кэш» exploration — короткая мемоизация промиса в памяти
+ * процесса: параллельные раны/карточки в одном воркере не гоняют одинаковые
+ * запросы к system.* и топ-N. Никакого хранимого состояния (персистентный
+ * scratch.schema_context удалён — вся информация и так живёт в ClickHouse),
+ * поэтому нет и церемонии инвалидации: новые таблицы/гранты/данные видны не
+ * позже, чем через SCHEMA_MEMO_TTL_MS даже на долгоживущем воркере.
  */
-export async function persistSchemaContext(
-  scratch: ClickHouseClient,
-  contexts: SchemaContext[],
-): Promise<void> {
-  await scratch.command({
-    query: `
-      CREATE TABLE IF NOT EXISTS ${SCHEMA_CONTEXT_TABLE} (
-        \`table\` String,
-        \`context\` String,
-        \`updated_at\` DateTime DEFAULT now()
-      )
-      ENGINE = ReplacingMergeTree(updated_at)
-      ORDER BY \`table\`
-    `,
-  });
-  await scratch.insert({
-    table: SCHEMA_CONTEXT_TABLE,
-    values: contexts.map((ctx) => ({
-      table: ctx.table,
-      context: JSON.stringify(ctx),
-    })),
-    format: "JSONEachRow",
-  });
+const SCHEMA_MEMO_TTL_MS = 60_000;
+
+let schemaMemo: { promise: Promise<SchemaContext[]>; at: number } | undefined;
+
+export async function getSchemaContext(client: ClickHouseClient): Promise<SchemaContext[]> {
+  if (!schemaMemo || Date.now() - schemaMemo.at >= SCHEMA_MEMO_TTL_MS) {
+    const promise = exploreSchema(client);
+    schemaMemo = { promise, at: Date.now() };
+    // Неудачное исследование не должно залипать в мемо до конца TTL.
+    promise.catch(() => {
+      if (schemaMemo?.promise === promise) schemaMemo = undefined;
+    });
+  }
+  return schemaMemo.promise;
 }
 
 /**
- * Читает кэш контекста (FINAL — схлопывает версии ReplacingMergeTree).
- * Порядок — как в exploreSchema: приоритетная таблица первой.
- */
-export async function loadSchemaContext(
-  scratch: ClickHouseClient,
-): Promise<SchemaContext[]> {
-  const rs = await scratch.query({
-    query: `SELECT \`context\` FROM ${SCHEMA_CONTEXT_TABLE} FINAL ORDER BY \`table\``,
-    format: "JSONEachRow",
-  });
-  const rows = await rs.json<{ context: string }>();
-  return sortContexts(rows.map((r) => JSON.parse(r.context) as SchemaContext));
-}
-
-/**
- * Полный проход B2: explore под agent_ro → персист под agent_scratch.
- * Общая точка входа Trigger-таски (src/trigger/explore-schema.ts) и
- * локального скрипта (scripts/explore-schema.ts).
+ * Полный живой проход B2 под agent_ro — точка входа Trigger-таски
+ * (src/trigger/explore-schema.ts) и локального скрипта (scripts/explore-schema.ts).
  */
 export async function runExploreSchema(): Promise<{ contexts: SchemaContext[] }> {
   const ro = createReadonlyClient();
-  const scratch = createScratchClient();
   try {
-    const contexts = await exploreSchema(ro);
-    await persistSchemaContext(scratch, contexts);
-    return { contexts };
+    return { contexts: await exploreSchema(ro) };
   } finally {
-    await Promise.all([ro.close(), scratch.close()]);
+    await ro.close();
   }
 }

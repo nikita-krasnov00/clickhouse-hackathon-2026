@@ -1,13 +1,15 @@
 /**
  * B2 живьём без Trigger: `npm run explore:schema`.
- * Исследует целевые таблицы под agent_ro, кэширует контекст в
- * scratch.schema_context под agent_scratch и показывает, что кэш наполнился.
+ * Динамическое обнаружение таблиц под agent_ro и живой сбор контекста схемы.
+ * Персистентного кэша нет — скрипт показывает ровно то, что увидит агент
+ * на ближайшем ране, и меряет, во что это обходится по времени.
  */
-import { loadSchemaContext, runExploreSchema } from "../src/lib/agent/explore";
-import { createScratchClient } from "../src/lib/clickhouse";
+import { runExploreSchema } from "../src/lib/agent/explore";
 
 async function main() {
+  const t0 = Date.now();
   const { contexts } = await runExploreSchema();
+  const elapsedMs = Date.now() - t0;
 
   for (const ctx of contexts) {
     console.log(`\n=== ${ctx.table}`);
@@ -29,23 +31,9 @@ async function main() {
     console.log(`  размер JSON-контекста: ${JSON.stringify(ctx).length} байт`);
   }
 
-  // Контрольное чтение кэша — убеждаемся, что персист сработал.
-  const scratch = createScratchClient();
-  try {
-    const persisted = await loadSchemaContext(scratch);
-    console.log(`\nscratch.schema_context: ${persisted.length} таблиц(ы) в кэше`);
-    for (const ctx of persisted) {
-      console.log(
-        `  ${ctx.table} — rowCount=${ctx.rowCount}, columns=${ctx.columns.length}, keyColumns=${ctx.keyColumns.length}`,
-      );
-    }
-    if (persisted.length === 0) {
-      throw new Error("кэш пуст после персиста");
-    }
-  } finally {
-    await scratch.close();
-  }
-
+  console.log(
+    `\nЖивое исследование: ${contexts.length} таблиц(ы) за ${elapsedMs} мс — столько заплатит ран без тёплой мемоизации`,
+  );
   console.log("\nexplore:schema OK");
 }
 

@@ -8,8 +8,8 @@
  *   2) конвейер целиком через тест-шов generateSqlImpl: первая генерация
  *      намеренно битая — в логе видно executing → healing → executing → done.
  */
-import { createReadonlyClient, createScratchClient } from "../src/lib/clickhouse";
-import { loadSchemaContext } from "../src/lib/agent/explore";
+import { createReadonlyClient } from "../src/lib/clickhouse";
+import { getSchemaContext } from "../src/lib/agent/explore";
 import { healSql, sanitizeSql, type GeneratedSql } from "../src/lib/agent/generate-sql";
 import { runInvestigatePipeline } from "../src/lib/agent/pipeline";
 import type { RunStep } from "../src/lib/contracts";
@@ -47,8 +47,7 @@ async function main() {
   try {
     // -- Часть 1: healSql напрямую ------------------------------------------
     console.log("=== Часть 1: healSql() напрямую с битым SQL");
-    const scratch = createScratchClient();
-    const schemaContext = await loadSchemaContext(scratch).finally(() => scratch.close());
+    const schemaContext = await getSchemaContext(ro);
 
     let chError = "";
     try {

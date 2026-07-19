@@ -2,9 +2,9 @@ import { logger, task } from "@trigger.dev/sdk";
 import { runExploreSchema } from "@/lib/agent/explore";
 
 /**
- * B2 — таска exploration: DESCRIBE + count + min/max дат + топ-N/кардинальности
- * ключевых колонок + сэмплы → компактный JSON-контекст в scratch.schema_context
- * (ReplacingMergeTree: перезапуск обновляет кэш).
+ * B2 — таска exploration: живое обнаружение таблиц + count + min/max дат +
+ * топ-N/кардинальности ключевых колонок + сэмплы. Персистентного кэша нет —
+ * таска показывает контекст, который агент соберёт на ближайшем ране.
  *
  * Запускается вручную из дашборда (payload {}) или триггером из кода;
  * тот же код локально без Trigger: `npm run explore:schema`.

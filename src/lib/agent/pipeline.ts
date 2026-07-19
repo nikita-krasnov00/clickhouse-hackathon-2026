@@ -2,8 +2,8 @@
  * B3/B4/B5 — конвейер investigate, отвязанный от Trigger-рантайма.
  *
  * Шаги (RunStep из контрактов, строгая валидация перед каждым эмитом):
- *   exploring      → кэш схемы: процесс → scratch.schema_context → живое
- *                    исследование (что первым найдётся);
+ *   exploring      → живое исследование схемы из ClickHouse (system.tables/
+ *                    columns + статистика; см. getSchemaContext в explore.ts);
  *   generating_sql → generateSql() — LLM-планировщик дашборда (B4): 1–3
  *                    карточки, каждая — свой SQL либо готовый дрилл A4;
  *   planning       → план готов, список карточек уходит в ленту прогресса;
@@ -25,7 +25,7 @@
  * metadata рана (Realtime); смоук-скрипт печатает их в stdout. Логика одна.
  */
 import type { ClickHouseClient } from "@clickhouse/client";
-import { createReadonlyClient, createScratchClient } from "@/lib/clickhouse";
+import { createReadonlyClient } from "@/lib/clickhouse";
 import {
   runStepSchema,
   viewSpecSchema,
@@ -36,9 +36,7 @@ import {
 } from "@/lib/contracts";
 import { resolveDrill } from "@/lib/drills";
 import {
-  exploreSchema,
-  loadSchemaContext,
-  persistSchemaContext,
+  getSchemaContext,
   type SchemaContext,
 } from "./explore";
 import {
@@ -57,9 +55,8 @@ export type StepEmitter = (step: RunStep) => void | Promise<void>;
 
 export type PipelineOptions = {
   emit: StepEmitter;
-  /** Инъекция клиентов для тестов; по умолчанию создаются и закрываются внутри. */
+  /** Инъекция клиента для тестов; по умолчанию создаётся и закрывается внутри. */
   readonlyClient?: ClickHouseClient;
-  scratchClient?: ClickHouseClient;
   /**
    * Тест-шов: подмена генерации (heal-smoke подсовывает битый SQL). Принимает
    * и легаси-форму одной sql-карточки — она заворачивается в план из 1 карточки.
@@ -358,17 +355,6 @@ function buildViewSpec(
 }
 
 // ---------------------------------------------------------------------------
-// Кэш контекста схемы на процесс
-// ---------------------------------------------------------------------------
-
-/**
- * Тёплый процесс (Trigger-воркер, dev-сервер) отвечает на раны подряд —
- * контекст схемы не меняется, круговой запрос в scratch на каждый ран лишний.
- */
-let schemaContextCache: { contexts: SchemaContext[]; at: number } | undefined;
-const SCHEMA_CACHE_TTL_MS = 10 * 60_000;
-
-// ---------------------------------------------------------------------------
 // Конвейер
 // ---------------------------------------------------------------------------
 
@@ -607,39 +593,14 @@ export async function runInvestigatePipeline(
   };
 
   const ro = options.readonlyClient ?? createReadonlyClient();
-  const scratch = options.scratchClient ?? createScratchClient();
-  const ownsClients = !options.readonlyClient && !options.scratchClient;
+  const ownsClients = !options.readonlyClient;
   let errorEmitted = false;
 
   try {
-    // -- exploring ----------------------------------------------------------
-    let schemaContext: SchemaContext[];
-    if (
-      schemaContextCache &&
-      Date.now() - schemaContextCache.at < SCHEMA_CACHE_TTL_MS
-    ) {
-      schemaContext = schemaContextCache.contexts;
-      await emit({ step: "exploring", message: "Схема уже в памяти процесса" });
-    } else {
-      await emit({ step: "exploring", message: "Читаю кэш схемы из scratch" });
-      try {
-        schemaContext = await loadSchemaContext(scratch);
-      } catch {
-        schemaContext = []; // кэш-таблицы ещё нет — исследуем живьём
-      }
-      if (schemaContext.length === 0) {
-        await emit({
-          step: "exploring",
-          message: "Кэш пуст — исследую схему живьём",
-        });
-        schemaContext = await exploreSchema(ro);
-        await persistSchemaContext(scratch, schemaContext);
-      }
-      schemaContextCache = { contexts: schemaContext, at: Date.now() };
-    }
-
-    // -- мгновенный срез (параллельно с LLM) --------------------------------
-    // Только для свежих вопросов: у кликов «почему?» дриллы уже были на экране.
+    // -- мгновенный срез (параллельно с exploring и LLM) ---------------------
+    // Стартует ПЕРВЫМ: дриллу не нужен контекст схемы, и он прячет латентность
+    // живого exploration. Только для свежих вопросов: у кликов «почему?»
+    // дриллы уже были на экране.
     const questionRepo = input.context
       ? undefined
       : input.question.match(/[\w.-]+\/[\w.-]+/)?.[0];
@@ -647,6 +608,15 @@ export async function runInvestigatePipeline(
       questionRepo && REPO_NAME_RE.test(questionRepo)
         ? runInstantPreview(ro, questionRepo, emit)
         : Promise.resolve(undefined);
+
+    // -- exploring: всегда живьём из ClickHouse ------------------------------
+    // Персистентного кэша схемы нет: метаданные и так лежат в ClickHouse.
+    // getSchemaContext — только короткая мемоизация в памяти процесса.
+    await emit({
+      step: "exploring",
+      message: "Исследую схему живьём (system.tables/columns + статистика)",
+    });
+    const schemaContext = await getSchemaContext(ro);
 
     // -- generating_sql → planning ------------------------------------------
     await emit({
@@ -739,7 +709,7 @@ export async function runInvestigatePipeline(
     throw err;
   } finally {
     if (ownsClients) {
-      await Promise.all([ro.close(), scratch.close()]);
+      await ro.close();
     }
   }
 }
