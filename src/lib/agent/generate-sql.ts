@@ -81,6 +81,29 @@ export type GeneratedPlan = { cards: PlannedCard[] };
 
 export const MAX_PLAN_CARDS = 3;
 
+/**
+ * Строгая zod-схема PlannedCard — для payload дочерней таски investigate-card
+ * (src/trigger/investigate-card.ts). В отличие от схем парсинга ответа LLM ниже
+ * (где `tool` опционален и достраивается), здесь карточка уже нормализована
+ * планировщиком: дискриминатор `tool` обязателен.
+ */
+export const plannedCardSchema = z.discriminatedUnion("tool", [
+  z.object({
+    tool: z.literal("sql"),
+    sql: z.string().min(1),
+    kind: viewKindSchema,
+    title: z.string().min(1),
+    anomalyWindow: z.tuple([z.string(), z.string()]).optional(),
+    bucketLabel: z.string().optional(),
+  }),
+  z.object({
+    tool: z.literal("drill"),
+    drillId: z.string().min(1),
+    params: z.record(z.string(), z.union([z.string(), z.number()])),
+    title: z.string(),
+  }),
+]);
+
 // ---------------------------------------------------------------------------
 // Санитайз SQL — страховка поверх прав agent_ro
 // ---------------------------------------------------------------------------
