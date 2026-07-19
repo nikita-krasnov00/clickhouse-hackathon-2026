@@ -9,6 +9,9 @@
  *   planning       → план готов, список карточек уходит в ленту прогресса;
  *   card_ready     → карточки исполняются ПАРАЛЛЕЛЬНО и эмитятся по мере
  *                    готовности — UI рендерит их, не дожидаясь конца рана.
+ *                    Исполнитель карточек — шов cardRunner: по умолчанию
+ *                    Promise.all в этом процессе (runCardsInProcess), в
+ *                    Trigger-ране — параллельные дочерние раны investigate-card.
  *                    Плюс «мгновенный срез»: если вопрос называет репозиторий,
  *                    первая timeline-карточка строится дриллом по роллапам ещё
  *                    до ответа LLM;
@@ -62,6 +65,13 @@ export type PipelineOptions = {
    * и легаси-форму одной sql-карточки — она заворачивается в план из 1 карточки.
    */
   generateSqlImpl?: (input: GenerateSqlInput) => Promise<GeneratedSql | GeneratedPlan>;
+  /**
+   * Шов исполнения карточек плана. Дефолт — runCardsInProcess (Promise.all в
+   * текущем процессе): его используют смоук-скрипты, он же фоллбек. Trigger-таска
+   * investigate подставляет исполнитель на параллельных дочерних ранах
+   * (batch.triggerByTaskAndWait → investigate-card, см. src/trigger/investigate.ts).
+   */
+  cardRunner?: CardRunner;
 };
 
 export type PipelineResult = {
@@ -307,8 +317,14 @@ function normalizePlan(result: GeneratedSql | GeneratedPlan): GeneratedPlan {
   return { cards: [{ tool: "sql", ...result }] };
 }
 
-function cardTitle(card: PlannedCard): string {
+export function cardTitle(card: PlannedCard): string {
   return card.tool === "sql" ? card.title : card.title || card.drillId;
+}
+
+/** Подпись карточки в сообщениях шагов: в плане из >1 карточки — в «ёлочках». */
+export function cardLabel(card: PlannedCard, manyCards: boolean): string {
+  const title = cardTitle(card);
+  return manyCards ? `«${title}»` : title;
 }
 
 function cardSource(card: PlannedCard): string {
@@ -343,12 +359,30 @@ async function runInstantPreview(
   }
 }
 
-type CardOutcome =
+export type CardOutcome =
   | { ok: true; spec: ViewSpec; sql?: string; attempts: number }
   | { ok: false; error: string; attempts: number };
 
+/** Контекст исполнителя карточек — всё, что нужно и sql-, и drill-карточке. */
+export type CardRunnerContext = {
+  ro: ClickHouseClient;
+  emit: StepEmitter;
+  input: AskRequest;
+  schemaContext: SchemaContext[];
+};
+
+/**
+ * Исполнитель карточек плана (шов PipelineOptions.cardRunner): получает все
+ * карточки разом и обязан вернуть исход КАЖДОЙ (падение одной карточки —
+ * CardOutcome {ok:false}, не исключение).
+ */
+export type CardRunner = (
+  cards: PlannedCard[],
+  ctx: CardRunnerContext,
+) => Promise<CardOutcome[]>;
+
 /** sql-карточка: executing → (healing → executing)* → card_ready. */
-async function runSqlCard(
+export async function runSqlCard(
   card: { tool: "sql" } & GeneratedSql,
   ctx: {
     ro: ClickHouseClient;
@@ -442,7 +476,7 @@ async function runSqlCard(
 }
 
 /** drill-карточка: готовый параметризованный запрос каталога A4, без healing. */
-async function runDrillCard(
+export async function runDrillCard(
   card: Extract<PlannedCard, { tool: "drill" }>,
   ctx: { ro: ClickHouseClient; emit: StepEmitter; label: string },
 ): Promise<CardOutcome> {
@@ -469,6 +503,30 @@ async function runDrillCard(
     };
   }
 }
+
+/**
+ * Одна карточка плана любого инструмента — общая точка входа default-раннера
+ * и дочерней Trigger-таски investigate-card. Никогда не бросает: любой исход —
+ * CardOutcome.
+ */
+export async function runPlannedCard(
+  card: PlannedCard,
+  ctx: CardRunnerContext & { label: string },
+): Promise<CardOutcome> {
+  return card.tool === "sql"
+    ? runSqlCard(card, ctx)
+    : runDrillCard(card, ctx);
+}
+
+/** Дефолтный исполнитель карточек: параллельный Promise.all в текущем процессе. */
+export const runCardsInProcess: CardRunner = (cards, ctx) => {
+  const many = cards.length > 1;
+  return Promise.all(
+    cards.map((card) =>
+      runPlannedCard(card, { ...ctx, label: cardLabel(card, many) }),
+    ),
+  );
+};
 
 export async function runInvestigatePipeline(
   input: AskRequest,
@@ -559,16 +617,11 @@ export async function runInvestigatePipeline(
                 .join(", ")}`,
     });
 
-    // -- параллельное исполнение карточек -----------------------------------
-    const many = cards.length > 1;
-    const outcomes = await Promise.all(
-      cards.map((card) => {
-        const label = many ? `«${cardTitle(card)}»` : cardTitle(card);
-        return card.tool === "sql"
-          ? runSqlCard(card, { ro, emit, input, schemaContext, label })
-          : runDrillCard(card, { ro, emit, label });
-      }),
-    );
+    // -- параллельное исполнение карточек (шов cardRunner) -------------------
+    // Дефолт — Promise.all в этом же процессе; Trigger-таска investigate
+    // подставляет исполнитель на параллельных дочерних ранах.
+    const runCards = options.cardRunner ?? runCardsInProcess;
+    const outcomes = await runCards(cards, { ro, emit, input, schemaContext });
 
     const succeeded = outcomes.filter((o) => o.ok);
     const failed = outcomes.filter((o) => !o.ok);
