@@ -68,9 +68,10 @@ export type InvestigationRunState = {
   /** История шагов конвейера (строго по runStepSchema). */
   steps: RunStep[];
   lastStep: RunStep | undefined;
-  /** Последнее превью SQL из шагов reviewing/executing. */
-  sqlPreview: string | undefined;
-  /** Результат: из шага done либо run.output. */
+  /**
+   * Карточки в порядке готовности: из шагов card_ready ещё ВО ВРЕМЯ рана
+   * (прогрессивная загрузка); фоллбек для старых ранов — done/run.output.
+   */
   viewSpecs: ViewSpec[] | undefined;
   /** Терминальная ошибка: шаг error, ошибка подписки или статус рана. */
   errorMessage: string | undefined;
@@ -125,16 +126,19 @@ export function useInvestigationRun(
     const output = run?.output ?? polled?.output ?? undefined;
     const lastStep = steps.at(-1);
 
-    const sqlPreview = steps.reduce<string | undefined>(
-      (acc, s) =>
-        (s.step === "reviewing" || s.step === "executing") && s.sqlPreview
-          ? s.sqlPreview
-          : acc,
-      undefined,
-    );
-
+    // Прогрессивная загрузка: карточки появляются по мере card_ready, не
+    // дожидаясь done. done/output — фоллбек (старые раны, потерянный стрим).
+    const readySpecs = steps
+      .filter((s) => s.step === "card_ready")
+      .map((s) => s.viewSpec);
     const doneStep = steps.find((s) => s.step === "done");
-    const viewSpecs = doneStep?.viewSpecs ?? output?.viewSpecs;
+    const finalSpecs = doneStep?.viewSpecs ?? output?.viewSpecs;
+    const viewSpecs =
+      readySpecs.length > 0
+        ? finalSpecs && finalSpecs.length > readySpecs.length
+          ? finalSpecs
+          : readySpecs
+        : finalSpecs;
 
     const errorStep = steps.find((s) => s.step === "error");
     const failed =
@@ -144,7 +148,7 @@ export function useInvestigationRun(
 
     let phase: InvestigationPhase;
     if (failed) phase = "failed";
-    else if (viewSpecs || status === "COMPLETED") phase = "done";
+    else if (doneStep || finalSpecs || status === "COMPLETED") phase = "done";
     else if (run || polled) phase = "running";
     else phase = "connecting";
 
@@ -155,7 +159,6 @@ export function useInvestigationRun(
       phase,
       steps,
       lastStep,
-      sqlPreview,
       viewSpecs,
       errorMessage,
       runStatus: status,

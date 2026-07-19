@@ -575,6 +575,66 @@ const CATALOG: Record<string, DrillDef> = {
 
 export const DRILL_IDS = Object.keys(CATALOG);
 
+/**
+ * Документация дриллов для промпта планировщика (B4): LLM собирает дашборд и
+ * может взять готовый параметризованный запрос (быстрый путь на роллапах)
+ * вместо генерации SQL. Тексты — на английском, уходят в промпт как есть.
+ */
+const DRILL_TOOL_DOCS: { id: string; params: string; when: string }[] = [
+  {
+    id: "stars-by-day",
+    params: "{repo: 'owner/name', from?: 'YYYY-MM-DD', to?: 'YYYY-MM-DD'}",
+    when: "Timeline of stars per day for one repo; auto-highlights the known anomaly window if the repo is a demo hero.",
+  },
+  {
+    id: "burst-metrics",
+    params: "{repo: 'owner/name'}",
+    when: "Verdict card with burst statistics of a repo's star curve (peak vs median, plateau shape, top-day share).",
+  },
+  {
+    id: "one-and-done",
+    params: "{repo: 'owner/name', from?: 'YYYY-MM-DD', to?: 'YYYY-MM-DD'}",
+    when: "Verdict card profiling the crowd that starred a repo in a window (one-and-done share, median stars per account) vs organic baseline.",
+  },
+  {
+    id: "actor-age-profile",
+    params: "{repo: 'owner/name', from?: 'YYYY-MM-DD', to?: 'YYYY-MM-DD'}",
+    when: "Histogram of account age at star time for a repo's stargazers — classic fake-star signal.",
+  },
+  {
+    id: "hourly-heatmap",
+    params: "{repo: 'owner/name', from?: 'YYYY-MM-DD', to?: 'YYYY-MM-DD'}",
+    when: "Heatmap hour-of-day × date of a repo's stars — shows machine-like regularity.",
+  },
+  {
+    id: "co-starred-repos",
+    params: "{repo: 'owner/name', from?: 'YYYY-MM-DD', to?: 'YYYY-MM-DD'}",
+    when: "Leaderboard of other repos starred by the same crowd (farm portfolio, lift vs organic control).",
+  },
+  {
+    id: "costar-graph",
+    params: "{repo: 'owner/name', from?: 'YYYY-MM-DD', to?: 'YYYY-MM-DD'}",
+    when: "Network graph of the star-farm around a repo (co-starred repos weighted by shared actors).",
+  },
+  {
+    id: "actors-of-day",
+    params: "{repo: 'owner/name', t: 'YYYY-MM-DD'}",
+    when: "Leaderboard of accounts that starred a repo on one specific day.",
+  },
+  {
+    id: "actor-timeline",
+    params: "{actor: 'login'}",
+    when: "Timeline of all events of one account.",
+  },
+];
+
+/** Готовый блок каталога дриллов для системного промпта планировщика. */
+export function formatDrillCatalogForPrompt(): string {
+  return DRILL_TOOL_DOCS.map(
+    (d) => `- drillId "${d.id}" · params ${d.params} — ${d.when}`,
+  ).join("\n");
+}
+
 /** Резолвер drillId, включая составные вида `cell-actors:owner/repo`. */
 export function resolveDrill(drillId: string): DrillDef {
   const def = CATALOG[drillId];

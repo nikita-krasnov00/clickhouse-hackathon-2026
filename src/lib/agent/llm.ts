@@ -7,7 +7,11 @@
  * процесс, чтобы фоллбек-пробы не повторялись на каждый вызов.
  *
  * Ретраи: 429/5xx/сеть/таймаут — один повтор с паузой, затем следующая модель.
+ *
+ * Операционный лог: КАЖДАЯ попытка (включая неудачные и фоллбеки моделей)
+ * пишется в scratch.llm_log — полный промпт, ответ, статус, тайминг (llm-log.ts).
  */
+import { logLlmCall } from "./llm-log";
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -126,6 +130,11 @@ async function attemptOnce(
   }
 }
 
+export type ChatCompleteOptions = {
+  /** Назначение вызова для операционного лога (generate_plan, heal_sql, …). */
+  purpose?: string;
+};
+
 /**
  * Один chat-completion: модель из env/дефолта, фоллбеки по цепочке MiniMax,
  * один ретрай на временных ошибках. Возвращает сырой content — парсинг JSON
@@ -133,17 +142,35 @@ async function attemptOnce(
  */
 export async function chatComplete(
   messages: ChatMessage[],
+  options?: ChatCompleteOptions,
 ): Promise<ChatCompletionResult> {
   const started = Date.now();
+  const purpose = options?.purpose ?? "unknown";
   const failures: string[] = [];
+  let attemptNo = 0;
 
   for (const model of candidateModels()) {
     for (let attempt = 1; attempt <= 2; attempt++) {
+      attemptNo += 1;
+      const attemptStarted = Date.now();
       const result = await attemptOnce(model, messages);
+      const attemptMs = Date.now() - attemptStarted;
+      // await дешёвый: wait_for_async_insert=0 — подтверждение из буфера
+      // сервера (миллисекунды), а сбой логирования гасится внутри logLlmCall.
+      await logLlmCall({
+        purpose,
+        model,
+        attempt: attemptNo,
+        status: result.ok ? "ok" : "error",
+        error: result.ok ? undefined : result.reason,
+        messages,
+        response: result.ok ? result.content : undefined,
+        elapsedMs: attemptMs,
+      });
       if (result.ok) {
         resolvedModel = model;
         const elapsedMs = Date.now() - started;
-        console.log(`[llm] model=${model} elapsed=${elapsedMs}ms`);
+        console.log(`[llm] purpose=${purpose} model=${model} elapsed=${elapsedMs}ms`);
         return { content: result.content, model, elapsedMs };
       }
       failures.push(`${model} (попытка ${attempt}): ${result.reason}`);

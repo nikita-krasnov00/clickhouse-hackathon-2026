@@ -2,15 +2,21 @@
  * B3/B4/B5 — конвейер investigate, отвязанный от Trigger-рантайма.
  *
  * Шаги (RunStep из контрактов, строгая валидация перед каждым эмитом):
- *   exploring      → читаем кэш схемы из scratch.schema_context (пустой кэш —
- *                    исследуем схему живьём и кэшируем);
- *   generating_sql → generateSql() — text-to-SQL через LLM (B4);
+ *   exploring      → кэш схемы: процесс → scratch.schema_context → живое
+ *                    исследование (что первым найдётся);
+ *   generating_sql → generateSql() — LLM-планировщик дашборда (B4): 1–3
+ *                    карточки, каждая — свой SQL либо готовый дрилл A4;
+ *   planning       → план готов, список карточек уходит в ленту прогресса;
+ *   card_ready     → карточки исполняются ПАРАЛЛЕЛЬНО и эмитятся по мере
+ *                    готовности — UI рендерит их, не дожидаясь конца рана.
+ *                    Плюс «мгновенный срез»: если вопрос называет репозиторий,
+ *                    первая timeline-карточка строится дриллом по роллапам ещё
+ *                    до ответа LLM;
  *   executing      → санитайз (только SELECT) + SQL под agent_ro, JSONEachRow;
- *   healing        → до 3 попыток; ошибка ClickHouse/валидации уходит модели
- *                    контекстом, healSql() возвращает исправленный SQL (B5);
- *   done           → ViewSpec[], проверенные viewSpecSchema.parse;
- *   error          → терминальная неудача после исчерпания попыток, со списком
- *                    всех попыток в message (фоллбек-карточку рисует UI).
+ *   healing        → до 3 попыток на sql-карточку; ошибка ClickHouse/валидации
+ *                    уходит модели контекстом, healSql() чинит SQL (B5);
+ *   done           → все успешные ViewSpec (проверены viewSpecSchema.parse);
+ *   error          → терминальная неудача: НИ ОДНА карточка плана не удалась.
  *
  * Trigger-таска (src/trigger/investigate.ts) передаёт emit, пишущий шаги в
  * metadata рана (Realtime); смоук-скрипт печатает их в stdout. Логика одна.
@@ -25,6 +31,7 @@ import {
   type RunStep,
   type ViewSpec,
 } from "@/lib/contracts";
+import { resolveDrill } from "@/lib/drills";
 import {
   exploreSchema,
   loadSchemaContext,
@@ -36,7 +43,10 @@ import {
   healSql,
   sanitizeSql,
   summarizeVerdict,
+  type GeneratedPlan,
   type GeneratedSql,
+  type GenerateSqlInput,
+  type PlannedCard,
   type VerdictSummary,
 } from "./generate-sql";
 
@@ -47,13 +57,18 @@ export type PipelineOptions = {
   /** Инъекция клиентов для тестов; по умолчанию создаются и закрываются внутри. */
   readonlyClient?: ClickHouseClient;
   scratchClient?: ClickHouseClient;
-  /** Тест-шов: подмена генерации SQL (heal-smoke подсовывает битый SQL). */
-  generateSqlImpl?: typeof generateSql;
+  /**
+   * Тест-шов: подмена генерации (heal-smoke подсовывает битый SQL). Принимает
+   * и легаси-форму одной sql-карточки — она заворачивается в план из 1 карточки.
+   */
+  generateSqlImpl?: (input: GenerateSqlInput) => Promise<GeneratedSql | GeneratedPlan>;
 };
 
 export type PipelineResult = {
   viewSpecs: ViewSpec[];
+  /** Финальные SQL успешных sql-карточек (с заголовками-комментариями). */
   sql: string;
+  /** Суммарные попытки исполнения по всем карточкам. */
   attempts: number;
 };
 
@@ -264,11 +279,195 @@ function buildViewSpec(
 }
 
 // ---------------------------------------------------------------------------
+// Кэш контекста схемы на процесс
+// ---------------------------------------------------------------------------
+
+/**
+ * Тёплый процесс (Trigger-воркер, dev-сервер) отвечает на раны подряд —
+ * контекст схемы не меняется, круговой запрос в scratch на каждый ран лишний.
+ */
+let schemaContextCache: { contexts: SchemaContext[]; at: number } | undefined;
+const SCHEMA_CACHE_TTL_MS = 10 * 60_000;
+
+// ---------------------------------------------------------------------------
 // Конвейер
 // ---------------------------------------------------------------------------
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function truncate(text: string, max = 300): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/** Легаси-форма одной sql-карточки (тест-шов) заворачивается в план. */
+function normalizePlan(result: GeneratedSql | GeneratedPlan): GeneratedPlan {
+  if ("cards" in result) return result;
+  return { cards: [{ tool: "sql", ...result }] };
+}
+
+function cardTitle(card: PlannedCard): string {
+  return card.tool === "sql" ? card.title : card.title || card.drillId;
+}
+
+function cardSource(card: PlannedCard): string {
+  return card.tool === "sql" ? `sql · ${card.kind}` : `drill:${card.drillId}`;
+}
+
+/**
+ * Мгновенный срез: вопрос называет репозиторий → timeline звёзд по роллапам
+ * (дрилл stars-by-day, сотни миллисекунд) эмитится ещё до ответа LLM.
+ * Любой сбой — тихий пропуск: превью не имеет права ронять ран.
+ */
+async function runInstantPreview(
+  ro: ClickHouseClient,
+  repo: string,
+  emit: StepEmitter,
+): Promise<ViewSpec | undefined> {
+  try {
+    const def = resolveDrill("stars-by-day");
+    const spec = viewSpecSchema.parse(
+      await def.execute(ro, def.params.parse({ repo })),
+    );
+    await emit({
+      step: "card_ready",
+      viewSpec: spec,
+      message: `Мгновенный срез по роллапам: «${
+        spec.kind === "verdict" ? "вердикт" : spec.title
+      }» — агент продолжает копать`,
+    });
+    return spec;
+  } catch {
+    return undefined;
+  }
+}
+
+type CardOutcome =
+  | { ok: true; spec: ViewSpec; sql?: string; attempts: number }
+  | { ok: false; error: string; attempts: number };
+
+/** sql-карточка: executing → (healing → executing)* → card_ready. */
+async function runSqlCard(
+  card: { tool: "sql" } & GeneratedSql,
+  ctx: {
+    ro: ClickHouseClient;
+    emit: StepEmitter;
+    input: AskRequest;
+    schemaContext: SchemaContext[];
+    /** Подпись карточки в сообщениях шагов (план из >1 карточки). */
+    label: string;
+  },
+): Promise<CardOutcome> {
+  const { ro, emit, input, schemaContext, label } = ctx;
+  let generated: GeneratedSql = card;
+  const attemptErrors: string[] = [];
+
+  for (let attempt = 1; attempt <= MAX_SQL_ATTEMPTS; attempt++) {
+    await emit({
+      step: "executing",
+      sqlPreview: generated.sql,
+      message:
+        attempt === 1
+          ? label
+          : `${label} — попытка ${attempt} из ${MAX_SQL_ATTEMPTS}`,
+    });
+    try {
+      // Санитайз (только SELECT, один стейтмент) — страховка поверх agent_ro;
+      // его ошибка тоже уходит в самопочинку.
+      const sql = sanitizeSql(generated.sql);
+      const rows = await executeSql(ro, sql);
+
+      // Для verdict — второй короткий LLM-вызов: вывод по фактическим цифрам.
+      // Сбой вызова не роняет карточку: buildViewSpec подставит title + low.
+      let verdictSummary: VerdictSummary | undefined;
+      if (generated.kind === "verdict") {
+        try {
+          verdictSummary = await summarizeVerdict({
+            question: input.question,
+            title: generated.title,
+            rows,
+          });
+        } catch {
+          verdictSummary = undefined;
+        }
+      }
+
+      const viewSpec = viewSpecSchema.parse(
+        buildViewSpec(generated, rows, verdictSummary, input.question),
+      );
+      await emit({
+        step: "card_ready",
+        viewSpec,
+        sql,
+        message: `${label}: ${rows.length} строк → карточка ${viewSpec.kind}`,
+      });
+      return { ok: true, spec: viewSpec, sql, attempts: attempt };
+    } catch (err) {
+      const lastError = errorMessage(err);
+      attemptErrors.push(lastError);
+      if (attempt < MAX_SQL_ATTEMPTS) {
+        // B5: ошибка уходит модели контекстом — healSql возвращает
+        // исправленный SQL в том же строгом JSON-формате.
+        await emit({
+          step: "healing",
+          attempt,
+          error: lastError,
+          message: `${label} — отдаю ошибку модели на починку`,
+        });
+        try {
+          generated = await healSql({
+            question: input.question,
+            schemaContext,
+            clickContext: input.context,
+            previous: generated,
+            error: lastError,
+            attempt,
+          });
+        } catch {
+          // LLM недоступна — оставляем прежний SQL, попытка станет простым ретраем.
+        }
+      }
+    }
+  }
+
+  const summary = attemptErrors
+    .map((e, i) => `Попытка ${i + 1}: ${truncate(e)}`)
+    .join(" | ");
+  return {
+    ok: false,
+    error: `${label}: SQL не удался после ${MAX_SQL_ATTEMPTS} попыток. ${summary}`,
+    attempts: MAX_SQL_ATTEMPTS,
+  };
+}
+
+/** drill-карточка: готовый параметризованный запрос каталога A4, без healing. */
+async function runDrillCard(
+  card: Extract<PlannedCard, { tool: "drill" }>,
+  ctx: { ro: ClickHouseClient; emit: StepEmitter; label: string },
+): Promise<CardOutcome> {
+  const { ro, emit, label } = ctx;
+  await emit({
+    step: "executing",
+    message: `${label} — дрилл ${card.drillId}`,
+  });
+  try {
+    const def = resolveDrill(card.drillId);
+    const params = def.params.parse(card.params);
+    const spec = viewSpecSchema.parse(await def.execute(ro, params));
+    await emit({
+      step: "card_ready",
+      viewSpec: spec,
+      message: `${label}: дрилл ${card.drillId} → карточка ${spec.kind}`,
+    });
+    return { ok: true, spec, attempts: 1 };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `${label}: дрилл ${card.drillId} не выполнился — ${truncate(errorMessage(err))}`,
+      attempts: 1,
+    };
+  }
 }
 
 export async function runInvestigatePipeline(
@@ -287,108 +486,122 @@ export async function runInvestigatePipeline(
 
   try {
     // -- exploring ----------------------------------------------------------
-    await emit({ step: "exploring", message: "Читаю кэш схемы из scratch" });
     let schemaContext: SchemaContext[];
-    try {
-      schemaContext = await loadSchemaContext(scratch);
-    } catch {
-      schemaContext = []; // кэш-таблицы ещё нет — исследуем живьём
-    }
-    if (schemaContext.length === 0) {
-      await emit({
-        step: "exploring",
-        message: "Кэш пуст — исследую схему живьём",
-      });
-      schemaContext = await exploreSchema(ro);
-      await persistSchemaContext(scratch, schemaContext);
+    if (
+      schemaContextCache &&
+      Date.now() - schemaContextCache.at < SCHEMA_CACHE_TTL_MS
+    ) {
+      schemaContext = schemaContextCache.contexts;
+      await emit({ step: "exploring", message: "Схема уже в памяти процесса" });
+    } else {
+      await emit({ step: "exploring", message: "Читаю кэш схемы из scratch" });
+      try {
+        schemaContext = await loadSchemaContext(scratch);
+      } catch {
+        schemaContext = []; // кэш-таблицы ещё нет — исследуем живьём
+      }
+      if (schemaContext.length === 0) {
+        await emit({
+          step: "exploring",
+          message: "Кэш пуст — исследую схему живьём",
+        });
+        schemaContext = await exploreSchema(ro);
+        await persistSchemaContext(scratch, schemaContext);
+      }
+      schemaContextCache = { contexts: schemaContext, at: Date.now() };
     }
 
-    // -- generating_sql -----------------------------------------------------
+    // -- мгновенный срез (параллельно с LLM) --------------------------------
+    // Только для свежих вопросов: у кликов «почему?» дриллы уже были на экране.
+    const questionRepo = input.context
+      ? undefined
+      : input.question.match(/[\w.-]+\/[\w.-]+/)?.[0];
+    const previewPromise: Promise<ViewSpec | undefined> =
+      questionRepo && REPO_NAME_RE.test(questionRepo)
+        ? runInstantPreview(ro, questionRepo, emit)
+        : Promise.resolve(undefined);
+
+    // -- generating_sql → planning ------------------------------------------
     await emit({
       step: "generating_sql",
-      message: `Пишу SQL по таблице ${schemaContext[0].table}`,
+      message: `Планирую карточки по таблице ${schemaContext[0].table}`,
     });
-    let generated = await (options.generateSqlImpl ?? generateSql)({
-      question: input.question,
-      schemaContext,
-      clickContext: input.context,
+    const plan = normalizePlan(
+      await (options.generateSqlImpl ?? generateSql)({
+        question: input.question,
+        schemaContext,
+        clickContext: input.context,
+      }),
+    );
+
+    const previewSpec = await previewPromise;
+    // Дедуп: план часто повторяет мгновенный срез (stars-by-day того же репо).
+    const cards = plan.cards.filter(
+      (c) =>
+        !(
+          previewSpec &&
+          c.tool === "drill" &&
+          c.drillId === "stars-by-day" &&
+          String(c.params.repo ?? c.params.series ?? "") === questionRepo
+        ),
+    );
+
+    await emit({
+      step: "planning",
+      cards: cards.map((c) => ({ title: cardTitle(c), source: cardSource(c) })),
+      message:
+        cards.length === 0
+          ? "План совпал с мгновенным срезом — он уже на экране"
+          : cards.length === 1
+            ? `Одна карточка: «${cardTitle(cards[0])}»`
+            : `Карточек: ${cards.length}, параллельно — ${cards
+                .map((c) => `«${cardTitle(c)}»`)
+                .join(", ")}`,
     });
 
-    // -- executing + healing (до MAX_SQL_ATTEMPTS попыток) -------------------
-    const attemptErrors: string[] = [];
-    for (let attempt = 1; attempt <= MAX_SQL_ATTEMPTS; attempt++) {
-      await emit({
-        step: "executing",
-        sqlPreview: generated.sql,
-        message:
-          attempt === 1 ? undefined : `Попытка ${attempt} из ${MAX_SQL_ATTEMPTS}`,
-      });
-      try {
-        // Санитайз (только SELECT, один стейтмент) — страховка поверх agent_ro;
-        // его ошибка тоже уходит в самопочинку.
-        const sql = sanitizeSql(generated.sql);
-        const rows = await executeSql(ro, sql);
+    // -- параллельное исполнение карточек -----------------------------------
+    const many = cards.length > 1;
+    const outcomes = await Promise.all(
+      cards.map((card) => {
+        const label = many ? `«${cardTitle(card)}»` : cardTitle(card);
+        return card.tool === "sql"
+          ? runSqlCard(card, { ro, emit, input, schemaContext, label })
+          : runDrillCard(card, { ro, emit, label });
+      }),
+    );
 
-        // Для verdict — второй короткий LLM-вызов: вывод по фактическим цифрам.
-        // Сбой вызова не роняет ран: buildViewSpec подставит title + low.
-        let verdictSummary: VerdictSummary | undefined;
-        if (generated.kind === "verdict") {
-          try {
-            verdictSummary = await summarizeVerdict({
-              question: input.question,
-              title: generated.title,
-              rows,
-            });
-          } catch {
-            verdictSummary = undefined;
-          }
-        }
+    const succeeded = outcomes.filter((o) => o.ok);
+    const failed = outcomes.filter((o) => !o.ok);
+    const attempts = outcomes.reduce((s, o) => s + o.attempts, 0);
 
-        const viewSpec = viewSpecSchema.parse(
-          buildViewSpec(generated, rows, verdictSummary, input.question),
-        );
-        await emit({
-          step: "done",
-          viewSpecs: [viewSpec],
-          message: `${rows.length} строк → карточка ${viewSpec.kind}`,
-        });
-        return { viewSpecs: [viewSpec], sql, attempts: attempt };
-      } catch (err) {
-        const lastError = errorMessage(err);
-        attemptErrors.push(lastError);
-        if (attempt < MAX_SQL_ATTEMPTS) {
-          // B5: ошибка уходит модели контекстом — healSql возвращает
-          // исправленный SQL в том же строгом JSON-формате.
-          await emit({
-            step: "healing",
-            attempt,
-            error: lastError,
-            message: "Отдаю ошибку модели на починку",
-          });
-          try {
-            generated = await healSql({
-              question: input.question,
-              schemaContext,
-              clickContext: input.context,
-              previous: generated,
-              error: lastError,
-              attempt,
-            });
-          } catch {
-            // LLM недоступна — оставляем прежний SQL, попытка станет простым ретраем.
-          }
-        }
-      }
+    // -- error: ни одна карточка плана не удалась ----------------------------
+    if (succeeded.length === 0 && cards.length > 0) {
+      const message = failed.map((f) => f.error).join(" || ");
+      errorEmitted = true;
+      await emit({ step: "error", message });
+      throw new Error(message);
     }
 
-    // -- error (самопочинка исчерпана) --------------------------------------
-    const attemptsSummary = attemptErrors
-      .map((e, i) => `Попытка ${i + 1}: ${e.length > 300 ? `${e.slice(0, 300)}…` : e}`)
-      .join(" | ");
-    const message = `SQL не удался после ${MAX_SQL_ATTEMPTS} попыток. ${attemptsSummary}`;
-    errorEmitted = true;
-    await emit({ step: "error", message });
-    throw new Error(message);
+    // -- done ---------------------------------------------------------------
+    const viewSpecs = [
+      ...(previewSpec ? [previewSpec] : []),
+      ...succeeded.map((o) => o.spec),
+    ];
+    const sql = succeeded
+      .filter((o) => o.sql)
+      .map((o) => o.sql as string)
+      .join("\n\n");
+    await emit({
+      step: "done",
+      viewSpecs,
+      message:
+        failed.length === 0
+          ? `${viewSpecs.length} ${viewSpecs.length === 1 ? "карточка" : "карточек"} готово`
+          : `${viewSpecs.length} из ${viewSpecs.length + failed.length} карточек готово; не удалось: ${failed
+              .map((f) => truncate(f.error, 160))
+              .join(" | ")}`,
+    });
+    return { viewSpecs, sql, attempts };
   } catch (err) {
     // Неожиданный сбой вне цикла исполнения (exploring/generating_sql/эмит) —
     // тоже завершаем терминальным шагом error, чтобы фронт увидел фоллбек.

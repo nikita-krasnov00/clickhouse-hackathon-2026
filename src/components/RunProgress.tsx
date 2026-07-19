@@ -3,12 +3,13 @@
 /**
  * C2 — видимый прогресс конвейера investigate.
  *
- * Таймлайн шагов RunStep с подписями RUN_STEP_LABELS («Изучаю схему → Пишу
- * SQL → Выполняю…»): пройденные шаги — галочка, текущий — спиннер и
- * «думающие» точки (LLM думает 5–30 с — ожидание анимировано, не мёртвый
- * экран), healing — заметный жёлтый шаг с номером попытки и текстом ошибки,
- * error — красный. Ниже — сворачиваемое моноширинное превью SQL из
- * sqlPreview шагов reviewing/executing.
+ * Таймлайн шагов RunStep с подписями RUN_STEP_LABELS («Изучаю схему →
+ * Продумываю запросы → Выполняю…»): пройденные шаги — галочка, текущий —
+ * спиннер и «думающие» точки (LLM думает 5–30 с — ожидание анимировано, не
+ * мёртвый экран), healing — заметный жёлтый шаг с номером попытки и текстом
+ * ошибки, error — красный. SQL-сэмплы показываются В САМИХ шагах: executing /
+ * reviewing / card_ready несут sqlPreview|sql — под шагом раскрывающийся
+ * моноширинный блок; planning перечисляет запланированные карточки.
  */
 import { RUN_STEP_LABELS, type RunStep } from "@/lib/contracts";
 import type { InvestigationPhase } from "@/lib/hooks/useInvestigationRun";
@@ -76,10 +77,35 @@ function StepIcon({ step, isActive }: { step: RunStep; isActive: boolean }) {
   }
 }
 
+/** SQL-сэмпл шага: раскрывающийся моноширинный блок прямо под шагом. */
+function StepSql({ sql, open }: { sql: string; open?: boolean }) {
+  const firstLine = sql.replace(/\s+/g, " ").trim();
+  return (
+    <details
+      className="mt-1 rounded-md border border-border bg-background/60"
+      open={open}
+    >
+      <summary className="cursor-pointer truncate px-2 py-1 font-mono text-[10px] text-muted select-none hover:text-foreground">
+        SQL · {truncate(firstLine, 80)}
+      </summary>
+      <pre className="max-h-48 overflow-auto border-t border-border px-2 py-1.5 font-mono text-[10px] leading-relaxed whitespace-pre">
+        {sql}
+      </pre>
+    </details>
+  );
+}
+
 function StepRow({ step, isActive }: { step: RunStep; isActive: boolean }) {
   const label = RUN_STEP_LABELS[step.step];
   const isHealing = step.step === "healing";
   const isError = step.step === "error";
+  // Сэмпл SQL шага: executing/reviewing несут sqlPreview, card_ready — sql.
+  const stepSql =
+    step.step === "executing" || step.step === "reviewing"
+      ? step.sqlPreview
+      : step.step === "card_ready"
+        ? step.sql
+        : undefined;
 
   return (
     <li className="flex items-start gap-2 text-xs">
@@ -133,6 +159,18 @@ function StepRow({ step, isActive }: { step: RunStep; isActive: boolean }) {
         {step.step !== "error" && !isHealing && step.message && (
           <p className="mt-0.5 text-[10px] text-muted">{truncate(step.message)}</p>
         )}
+        {/* План дашборда: какие карточки и каким инструментом. */}
+        {step.step === "planning" && step.cards && step.cards.length > 0 && (
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {step.cards.map((c, i) => (
+              <li key={i} className="flex items-baseline gap-1.5 text-[10px] text-muted">
+                <span className="font-mono text-accent/80">{c.source}</span>
+                <span className="truncate">{c.title}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {stepSql && <StepSql sql={stepSql} open={isActive} />}
       </div>
     </li>
   );
@@ -141,45 +179,30 @@ function StepRow({ step, isActive }: { step: RunStep; isActive: boolean }) {
 export function RunProgress({
   steps,
   phase,
-  sqlPreview,
 }: {
   steps: RunStep[];
   phase: InvestigationPhase;
-  sqlPreview: string | undefined;
 }) {
   const isLive = phase === "connecting" || phase === "running";
 
   return (
-    <div>
-      <ol className="flex flex-col gap-1.5">
-        {steps.length === 0 && (
-          <li className="flex items-center gap-2 text-xs text-muted">
-            <Spinner />
-            <span>
-              Запускаю конвейер
-              <ThinkingDots />
-            </span>
-          </li>
-        )}
-        {steps.map((step, i) => (
-          <StepRow
-            key={i}
-            step={step}
-            isActive={isLive && i === steps.length - 1}
-          />
-        ))}
-      </ol>
-
-      {sqlPreview && (
-        <details className="mt-2.5 rounded-lg border border-border bg-background/60" open>
-          <summary className="cursor-pointer px-2.5 py-1.5 font-mono text-[10px] text-muted select-none hover:text-foreground">
-            SQL
-          </summary>
-          <pre className="max-h-56 overflow-auto border-t border-border px-2.5 py-2 font-mono text-[10px] leading-relaxed whitespace-pre">
-            {sqlPreview}
-          </pre>
-        </details>
+    <ol className="flex flex-col gap-1.5">
+      {steps.length === 0 && (
+        <li className="flex items-center gap-2 text-xs text-muted">
+          <Spinner />
+          <span>
+            Запускаю конвейер
+            <ThinkingDots />
+          </span>
+        </li>
       )}
-    </div>
+      {steps.map((step, i) => (
+        <StepRow
+          key={i}
+          step={step}
+          isActive={isLive && i === steps.length - 1}
+        />
+      ))}
+    </ol>
   );
 }
