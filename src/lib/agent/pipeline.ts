@@ -343,6 +343,8 @@ function buildViewSpec(
         points,
         xLabel: generated.xLabel ?? "x",
         yLabel: generated.yLabel ?? "y",
+        ...(generated.xScale ? { xScale: generated.xScale } : {}),
+        ...(generated.yScale ? { yScale: generated.yScale } : {}),
         clicks,
       };
     }

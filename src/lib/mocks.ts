@@ -155,6 +155,8 @@ const scatter: ViewSpec = {
   ],
   xLabel: "Возраст аккаунта, дни",
   yLabel: "Событий за всё время",
+  xScale: "log",
+  yScale: "log",
   clicks: [
     {
       on: "point",

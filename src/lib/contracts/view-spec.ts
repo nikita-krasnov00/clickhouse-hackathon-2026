@@ -242,12 +242,22 @@ export const bigNumberSpecSchema = z.strictObject({
 });
 export type BigNumberSpec = z.infer<typeof bigNumberSpecSchema>;
 
+/**
+ * Шкала оси scatter. 'log' — для величин, разбросанных на порядки (звёзды,
+ * коммиты): точки берутся СЫРЫМИ, логарифмирование и подписи делает рендер
+ * (тики — реальные значения 50/500/5k, не log-числа). Дефолт — 'linear'.
+ */
+export const axisScaleSchema = z.enum(["linear", "log"]);
+export type AxisScale = z.infer<typeof axisScaleSchema>;
+
 export const scatterSpecSchema = z.strictObject({
   kind: z.literal("scatter"),
   title: z.string(),
   points: z.array(scatterPointSchema),
   xLabel: z.string(),
   yLabel: z.string(),
+  xScale: axisScaleSchema.optional(),
+  yScale: axisScaleSchema.optional(),
   clicks: z.array(clickTargetSchema),
 });
 export type ScatterSpec = z.infer<typeof scatterSpecSchema>;

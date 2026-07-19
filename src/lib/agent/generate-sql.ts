@@ -64,6 +64,9 @@ export type GeneratedSql = {
   xLabel?: string;
   /** Только для scatter: подпись оси y. */
   yLabel?: string;
+  /** Только для scatter: 'log' для величин, разбросанных на порядки. */
+  xScale?: "linear" | "log";
+  yScale?: "linear" | "log";
 };
 
 /** Карточка плана: свой SQL либо готовый дрилл каталога A4. */
@@ -153,6 +156,8 @@ const sqlCardSchema = z.object({
   bucketLabel: z.string().nullish(),
   xLabel: z.string().nullish(),
   yLabel: z.string().nullish(),
+  xScale: z.enum(["linear", "log"]).nullish(),
+  yScale: z.enum(["linear", "log"]).nullish(),
 });
 
 const drillCardSchema = z.object({
@@ -190,6 +195,8 @@ function parseSqlCard(raw: unknown): PlannedCard {
     ...(parsed.bucketLabel ? { bucketLabel: parsed.bucketLabel } : {}),
     ...(parsed.xLabel ? { xLabel: parsed.xLabel } : {}),
     ...(parsed.yLabel ? { yLabel: parsed.yLabel } : {}),
+    ...(parsed.xScale ? { xScale: parsed.xScale } : {}),
+    ...(parsed.yScale ? { yScale: parsed.yScale } : {}),
   };
 }
 
@@ -237,6 +244,8 @@ function parseSingleSqlAnswer(content: string): GeneratedSql {
     ...(card.bucketLabel ? { bucketLabel: card.bucketLabel } : {}),
     ...(card.xLabel ? { xLabel: card.xLabel } : {}),
     ...(card.yLabel ? { yLabel: card.yLabel } : {}),
+    ...(card.xScale ? { xScale: card.xScale } : {}),
+    ...(card.yScale ? { yScale: card.yScale } : {}),
   };
 }
 
@@ -296,20 +305,21 @@ const SQL_RULES = `## SQL rules (mandatory)
 - heatmap   → columns: x (string), y (string), value (number).
 - verdict   → EXACTLY ONE row of aggregate metrics; every column becomes an evidence stat, so alias each with a readable snake_case name. Good evidence for star-fraud: burst size vs median, share of accounts with a single event ever, concentration of stars in a few days/hours, top-day share.
 - bignumber → EXACTLY ONE row; column: value (number). Optional columns: delta (number, % change vs a baseline period, positive = growth), label (string, short caption of what value means), detail (string, secondary context line).
-- scatter   → columns: x (number), y (number); optional label (string, entity name — account/repo). LIMIT at most 500 points. Also set "xLabel" and "yLabel" (axis names) in your JSON answer.
+- scatter   → columns: x (number), y (number); optional label (string, entity name — account/repo). LIMIT at most 500 points. Return RAW numbers — do NOT log-transform x/y inside the SQL. If a quantity spans orders of magnitude (stars, commits, followers), set "xScale"/"yScale": "log" in your JSON answer and the chart handles the log axis with real tick labels; otherwise omit them (linear). Set "xLabel"/"yLabel" to plain quantity names WITHOUT "(log)". The chart draws the trend line and Pearson r itself, so you do NOT need a separate correlation query just to visualize the relationship — one scatter answers "is there a relationship?".
 - graph     → only available via the costar-graph drill, never as a "sql" card.`;
 
 const OUTPUT_FORMAT = `## Output format
 Reply with ONLY a strict JSON object — no markdown fences, no explanations:
 {"cards": [
   {"tool": "drill", "drillId": "…", "params": {"repo": "owner/name"}, "title": "…"},
-  {"tool": "sql", "sql": "…", "kind": "timeline|leaderboard|histogram|heatmap|verdict|bignumber|scatter", "title": "…", "anomalyWindow": ["fromISO", "toISO"], "bucketLabel": "…", "xLabel": "…", "yLabel": "…"}
+  {"tool": "sql", "sql": "…", "kind": "timeline|leaderboard|histogram|heatmap|verdict|bignumber|scatter", "title": "…", "anomalyWindow": ["fromISO", "toISO"], "bucketLabel": "…", "xLabel": "…", "yLabel": "…", "xScale": "log", "yScale": "log"}
 ]}
 - "cards": 1 to ${MAX_PLAN_CARDS} cards. A simple lookup question deserves exactly 1 card; an investigation («что странного…», «накручен ли…», «докажи») deserves 2–${MAX_PLAN_CARDS} complementary angles.
 - "title": a short insight headline in the same language as the user's question (also for drill cards).
 - "anomalyWindow": optional, timeline only — include it only when the question points at a suspicious window you can already name.
 - "bucketLabel": histogram only — the axis name for the buckets.
-- "xLabel"/"yLabel": scatter only — the axis names, in the language of the question.`;
+- "xLabel"/"yLabel": scatter only — the axis names (plain quantities, no "(log)"), in the language of the question.
+- "xScale"/"yScale": scatter only — "log" for order-of-magnitude quantities, otherwise omit.`;
 
 function buildSystemPrompt(): string {
   // TODO: hardcoded system promt

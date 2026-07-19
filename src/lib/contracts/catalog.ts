@@ -202,26 +202,29 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
   },
   scatter: {
     kind: "scatter",
-    summary: "Scatter plot: entities as points on two numeric axes.",
+    summary:
+      "Scatter plot: entities as points on two numeric axes; the card draws a trend line and Pearson r itself.",
     whenToUse:
-      "The question is about a relationship between two numeric properties of many entities: account age vs stars given, events per account vs repos starred. Bot farms show up as tight visual clusters. Keep at most 500 points.",
+      "The question is about a relationship/dependency between two numeric properties of many entities: stars vs commits, account age vs stars given, events per account vs repos starred. The trend line + r answer «is there a relationship?» directly. Bot farms show up as tight visual clusters. Keep at most 500 points.",
     dataShape:
-      "points: [{x: number, y: number, label?: string (entity name)}], ≤ 500 points; xLabel/yLabel: axis names. clicks: targets with on:'point', selectable fields 'x', 'y', 'label'.",
+      "points: [{x: number, y: number, label?: string (entity name)}], ≤ 500 points, RAW numbers (never log-transform in SQL). xLabel/yLabel: plain quantity names. xScale/yScale: 'log' when a quantity spans orders of magnitude (stars, commits) — the card log-scales the axis and labels ticks with real values. clicks: targets with on:'point', selectable fields 'x', 'y', 'label'.",
     example: {
       kind: "scatter",
-      title: "Возраст аккаунта vs звёзд за день: кто звездил 2 марта",
+      title: "Звёзды vs коммиты: есть ли связь?",
       points: [
-        { x: 2, y: 1, label: "star-bot-101" },
-        { x: 3, y: 1, label: "star-bot-102" },
-        { x: 1240, y: 34, label: "real-contributor" },
+        { x: 46475, y: 812, label: "xai-org/grok-1" },
+        { x: 5300, y: 240, label: "acme/turbo-widget" },
+        { x: 120, y: 15, label: "solo-dev/side-project" },
       ],
-      xLabel: "Возраст аккаунта, дни",
-      yLabel: "Звёзд поставлено 2 марта",
+      xLabel: "Звёзды",
+      yLabel: "Коммиты (PushEvent)",
+      xScale: "log",
+      yScale: "log",
       clicks: [
         {
           on: "point",
           selectionKeys: ["label"],
-          label: "Что это за аккаунт?",
+          label: "Что это за репозиторий?",
         },
       ],
     },
