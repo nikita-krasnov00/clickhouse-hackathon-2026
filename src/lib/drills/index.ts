@@ -14,7 +14,16 @@
  */
 import { z } from "zod";
 import type { ClickHouseClient } from "@clickhouse/client";
+import { config } from "@/lib/config";
 import type { ClickTarget, ViewSpec } from "@/lib/contracts";
+
+/**
+ * Таблица событий — из конфига (GITHUB_EVENTS_TABLE). Имя таблицы нельзя
+ * передать через query_params (ClickHouse не параметризует идентификаторы),
+ * поэтому оно интерполируется в SQL строкой; это значение нашего конфига,
+ * не пользовательский ввод.
+ */
+const EVENTS_TABLE = config.dataset.githubEventsTable;
 
 // ---------------------------------------------------------------------------
 // Знания A3: окна аномалий героев демо (агент их «находит», дрилл подсвечивает).
@@ -144,7 +153,7 @@ const actorsOfDay: DrillDef = {
               a.stars_6mo AS stars_6mo,
               a.active_days AS active_days,
               toString(toDate(a.first_ts)) AS first_seen
-       FROM github.github_events e
+       FROM ${EVENTS_TABLE} e
        JOIN scratch.actor_stats_6mo a ON a.actor_login = e.actor_login
        WHERE e.event_type = 'WatchEvent'
          AND e.repo_name = {repo:String}
@@ -190,7 +199,7 @@ const actorAgeProfile: DrillDef = {
          countIf(age >=     365*86400) AS y1_plus
        FROM (
          SELECT e.created_at - a.first_ts AS age
-         FROM github.github_events e
+         FROM ${EVENTS_TABLE} e
          JOIN scratch.actor_stats_6mo a ON a.actor_login = e.actor_login
          WHERE e.event_type = 'WatchEvent'
            AND e.repo_name = {repo:String}
@@ -232,7 +241,7 @@ async function costarRows(
   return q<{ repo: string; s_actors: unknown; s_share: unknown; lift: unknown }>(
     client,
     `WITH suspects AS (
-       SELECT DISTINCT actor_login FROM github.github_events
+       SELECT DISTINCT actor_login FROM ${EVENTS_TABLE}
        WHERE event_type = 'WatchEvent' AND repo_name = {repo:String}
          AND toDate(created_at) BETWEEN {from:Date} AND {to:Date}
      )
@@ -299,7 +308,7 @@ const costarGraph: DrillDef = {
     const pairRows = await q<{ source: string; target: string; w: unknown }>(
       client,
       `WITH suspects AS (
-         SELECT DISTINCT actor_login FROM github.github_events
+         SELECT DISTINCT actor_login FROM ${EVENTS_TABLE}
          WHERE event_type = 'WatchEvent' AND repo_name = {repo:String}
            AND toDate(created_at) BETWEEN {from:Date} AND {to:Date}
        )
@@ -344,7 +353,7 @@ const hourlyHeatmap: DrillDef = {
       `SELECT toString(toHour(created_at)) AS x,
               toString(toDate(created_at)) AS y,
               count() AS value
-       FROM github.github_events
+       FROM ${EVENTS_TABLE}
        WHERE event_type = 'WatchEvent' AND repo_name = {repo:String}
          AND toDate(created_at) BETWEEN {from:Date} AND {to:Date}
        GROUP BY x, y ORDER BY y, x`,
@@ -381,7 +390,7 @@ function cellActors(repo: string): DrillDef {
                 a.stars_6mo AS stars_6mo,
                 a.active_days AS active_days,
                 toString(toDate(a.first_ts)) AS first_seen
-         FROM github.github_events e
+         FROM ${EVENTS_TABLE} e
          JOIN scratch.actor_stats_6mo a ON a.actor_login = e.actor_login
          WHERE e.event_type = 'WatchEvent' AND e.repo_name = {repo:String}
            AND toDate(e.created_at) = {y:Date} AND toHour(e.created_at) = {x:UInt8}
@@ -418,7 +427,7 @@ const actorTimeline: DrillDef = {
     const rows = await q<{ t: string; v: unknown }>(
       client,
       `SELECT toString(toDate(created_at)) AS t, count() AS v
-       FROM github.github_events
+       FROM ${EVENTS_TABLE}
        WHERE actor_login = {actor:String}
        GROUP BY t ORDER BY t LIMIT 1000`,
       { actor },
@@ -491,7 +500,7 @@ const oneAndDone: DrillDef = {
     const [r] = await q<Record<string, unknown>>(
       client,
       `WITH suspects AS (
-         SELECT DISTINCT actor_login FROM github.github_events
+         SELECT DISTINCT actor_login FROM ${EVENTS_TABLE}
          WHERE event_type = 'WatchEvent' AND repo_name = {repo:String}
            AND toDate(created_at) BETWEEN {from:Date} AND {to:Date}
        )
