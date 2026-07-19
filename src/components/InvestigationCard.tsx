@@ -12,14 +12,17 @@
  *
  * Если /api/ask вернул ошибку (runId нет) — карточка сразу в failed.
  */
-import type { ClickContext, ViewSpec } from "@/lib/contracts";
+import type { ViewSpec } from "@/lib/contracts";
 import { useElapsedSeconds } from "@/lib/hooks/useElapsedSeconds";
 import {
   useInvestigationRun,
   type InvestigationRunState,
 } from "@/lib/hooks/useInvestigationRun";
 import { RunProgress } from "@/components/RunProgress";
-import { ViewSpecCard } from "@/components/viewspec/ViewSpecCard";
+import {
+  ViewSpecCard,
+  type SpecClickHandler,
+} from "@/components/viewspec/ViewSpecCard";
 
 export type Investigation = {
   /** Локальный id карточки в ленте (не runId). */
@@ -88,7 +91,7 @@ export function InvestigationCard({
   onClickContext,
 }: {
   investigation: Investigation;
-  onClickContext?: (ctx: ClickContext) => void;
+  onClickContext?: SpecClickHandler;
 }) {
   const { id, question, askedAt, runId, publicAccessToken, askError } = investigation;
   const state = useInvestigationRun(runId, publicAccessToken);

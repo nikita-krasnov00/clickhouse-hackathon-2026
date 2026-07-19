@@ -66,6 +66,9 @@ export const MAX_SQL_ATTEMPTS = 3;
 
 type ResultRow = Record<string, unknown>;
 
+/** owner/name — признак, что строка выглядит как имя репозитория. */
+const REPO_NAME_RE = /^[^\s/]+\/[^\s/]+$/;
+
 async function executeSql(client: ClickHouseClient, sql: string): Promise<ResultRow[]> {
   const rs = await client.query({
     query: sql,
@@ -118,10 +121,14 @@ function buildViewSpec(
   generated: GeneratedSql,
   rows: ResultRow[],
   verdictSummary?: VerdictSummary,
+  question?: string,
 ): unknown {
   if (rows.length === 0) {
     throw new Error("SQL вернул 0 строк — карточку не из чего собрать");
   }
+  // Репо из текста вопроса: если серия одна и без имени, называем её репо —
+  // тогда клик по точке получает drillId (drill резолвит repo из series).
+  const questionRepo = question?.match(/[\w.-]+\/[\w.-]+/)?.[0];
   switch (generated.kind) {
     case "timeline": {
       // Опциональная колонка `series` разводит точки по нескольким линиям.
@@ -131,16 +138,22 @@ function buildViewSpec(
         const name =
           "series" in row && row.series != null && row.series !== ""
             ? String(row.series)
-            : generated.title;
+            : (questionRepo ?? generated.title);
         const points = bySeries.get(name) ?? [];
         points.push({ t: String(row.t), v: Number(row.v) });
         bySeries.set(name, points);
       }
+      // A4/C6: если имена серий — репозитории, точка дриллится в «акторы дня»
+      // (drill резолвит repo из selection.series); иначе остаётся путь «почему?».
+      const seriesAreRepos = [...bySeries.keys()].every((n) => REPO_NAME_RE.test(n));
       const clicks: ClickTarget[] = [
         {
           on: "point",
           selectionKeys: ["t", "series"],
-          label: "Почему всплеск в этот момент?",
+          ...(seriesAreRepos ? { drillId: "actors-of-day" } : {}),
+          label: seriesAreRepos
+            ? "Кто ставил звёзды в этот день?"
+            : "Почему всплеск в этот момент?",
         },
       ];
       return {
@@ -153,14 +166,22 @@ function buildViewSpec(
     }
     case "leaderboard": {
       const keys = Object.keys(rows[0]);
-      // Первая колонка — сущность (конвенция generate-sql.ts): клик по строке
-      // уносит её значение в selection нового рана «почему?».
+      // Первая колонка — сущность (конвенция generate-sql.ts). A4/C6: колонка
+      // репозитория дриллится в таймлайн звёзд; иначе клик идёт в «почему?».
+      const repoKey = keys.find((k) => k === "repo" || k === "repo_name");
       const clicks: ClickTarget[] = [
-        {
-          on: "row",
-          selectionKeys: [keys[0]],
-          label: "Разобраться, что здесь происходит",
-        },
+        repoKey
+          ? {
+              on: "row",
+              selectionKeys: [repoKey],
+              drillId: "stars-by-day",
+              label: "Таймлайн звёзд этого репо",
+            }
+          : {
+              on: "row",
+              selectionKeys: [keys[0]],
+              label: "Разобраться, что здесь происходит",
+            },
       ];
       return {
         kind: "leaderboard",
@@ -324,7 +345,7 @@ export async function runInvestigatePipeline(
         }
 
         const viewSpec = viewSpecSchema.parse(
-          buildViewSpec(generated, rows, verdictSummary),
+          buildViewSpec(generated, rows, verdictSummary, input.question),
         );
         await emit({
           step: "done",

@@ -17,10 +17,49 @@
  *                 run.output — отдельный fetch результата не нужен;
  *   - phase     — connecting | running | done | failed (для рендера).
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { runStepSchema, type RunStep, type ViewSpec } from "@/lib/contracts";
 import type { investigateTask } from "@/trigger/investigate";
+
+/**
+ * Поллинг-фоллбек (риск из PLAN.md: «Realtime не завёлся — деградация до
+ * поллинга»): параллельно подписке опрашиваем /api/run-status и берём самое
+ * информативное состояние (больше шагов / терминальный статус). Когда Realtime
+ * работает, он всегда впереди и поллинг ничего не меняет.
+ */
+type PolledRun = {
+  status?: string;
+  metadata?: { steps?: unknown } | null;
+  output?: { viewSpecs?: ViewSpec[] } | null;
+};
+
+const POLL_INTERVAL_MS = 3000;
+
+function usePolledRun(runId: string | undefined, active: boolean): PolledRun | undefined {
+  const [polled, setPolled] = useState<PolledRun | undefined>(undefined);
+  useEffect(() => {
+    if (!runId || !active) return;
+    let stop = false;
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/run-status?runId=${encodeURIComponent(runId)}`);
+        if (!res.ok) return;
+        const body = (await res.json()) as PolledRun;
+        if (!stop) setPolled(body);
+      } catch {
+        // сеть мигнула — следующий тик попробует снова
+      }
+    };
+    void tick();
+    const id = setInterval(tick, POLL_INTERVAL_MS);
+    return () => {
+      stop = true;
+      clearInterval(id);
+    };
+  }, [runId, active]);
+  return polled;
+}
 
 export type InvestigationPhase = "connecting" | "running" | "done" | "failed";
 
@@ -69,8 +108,21 @@ export function useInvestigationRun(
     enabled,
   });
 
+  // Поллинг активен, пока ран не терминален ни по одному из источников.
+  const realtimeSteps = useMemo(() => parseSteps(run?.metadata?.steps), [run]);
+  const realtimeTerminal =
+    (run?.status !== undefined &&
+      (run.status === "COMPLETED" || FAILED_STATUSES.has(run.status))) ||
+    realtimeSteps.some((s) => s.step === "done" || s.step === "error");
+  const polled = usePolledRun(runId, enabled && !realtimeTerminal);
+
   return useMemo<InvestigationRunState>(() => {
-    const steps = parseSteps(run?.metadata?.steps);
+    // Самый информативный источник: у кого больше валидных шагов, тот и прав.
+    const polledSteps = parseSteps(polled?.metadata?.steps);
+    const usePolled = polledSteps.length > realtimeSteps.length;
+    const steps = usePolled ? polledSteps : realtimeSteps;
+    const status = run?.status ?? polled?.status;
+    const output = run?.output ?? polled?.output ?? undefined;
     const lastStep = steps.at(-1);
 
     const sqlPreview = steps.reduce<string | undefined>(
@@ -82,10 +134,9 @@ export function useInvestigationRun(
     );
 
     const doneStep = steps.find((s) => s.step === "done");
-    const viewSpecs = doneStep?.viewSpecs ?? run?.output?.viewSpecs;
+    const viewSpecs = doneStep?.viewSpecs ?? output?.viewSpecs;
 
     const errorStep = steps.find((s) => s.step === "error");
-    const status = run?.status;
     const failed =
       Boolean(errorStep) ||
       Boolean(error) ||
@@ -94,7 +145,7 @@ export function useInvestigationRun(
     let phase: InvestigationPhase;
     if (failed) phase = "failed";
     else if (viewSpecs || status === "COMPLETED") phase = "done";
-    else if (run) phase = "running";
+    else if (run || polled) phase = "running";
     else phase = "connecting";
 
     const errorMessage = errorStep?.message ?? error?.message ??
@@ -109,5 +160,5 @@ export function useInvestigationRun(
       errorMessage,
       runStatus: status,
     };
-  }, [run, error]);
+  }, [run, error, polled, realtimeSteps]);
 }
