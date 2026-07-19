@@ -129,7 +129,7 @@ export function InvestigationCard({
       {/* Прогресс конвейера: живой — развёрнут; done — свёрнут в details. */}
       {!askError && phase !== "done" && (
         <div className="mt-3">
-          <RunProgress steps={state.steps} phase={phase} sqlPreview={state.sqlPreview} />
+          <RunProgress steps={state.steps} phase={phase} />
         </div>
       )}
       {!askError && phase === "done" && (
@@ -139,14 +139,15 @@ export function InvestigationCard({
             {stepsNoun(state.steps.length)} · {elapsed} с
           </summary>
           <div className="mt-2">
-            <RunProgress steps={state.steps} phase={phase} sqlPreview={state.sqlPreview} />
+            <RunProgress steps={state.steps} phase={phase} />
           </div>
         </details>
       )}
 
       {phase === "failed" && <FailedFallback state={state} askError={askError} />}
 
-      {phase === "done" && state.viewSpecs && (
+      {/* Карточки рендерятся по мере card_ready — ещё во время рана. */}
+      {state.viewSpecs && state.viewSpecs.length > 0 && (
         <div className="mt-3 flex flex-col gap-3">
           {state.viewSpecs.map((spec: ViewSpec, i: number) => (
             <ViewSpecCard

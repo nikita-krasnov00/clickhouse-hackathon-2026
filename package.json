@@ -12,7 +12,8 @@
     "explore:schema": "tsx --env-file=.env scripts/explore-schema.ts",
     "investigate:smoke": "tsx --env-file=.env scripts/investigate-smoke.ts",
     "heal:smoke": "tsx --env-file=.env scripts/heal-smoke.ts",
-    "drill:smoke": "tsx --env-file=.env scripts/drill-smoke.ts"
+    "drill:smoke": "tsx --env-file=.env scripts/drill-smoke.ts",
+    "llm:log": "tsx --env-file=.env scripts/llm-log-tail.ts"
   },
   "dependencies": {
     "@clickhouse/client": "^1.23.1",
