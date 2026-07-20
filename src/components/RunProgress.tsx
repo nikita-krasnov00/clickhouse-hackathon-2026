@@ -9,7 +9,7 @@
  * мёртвый экран), healing — заметный жёлтый шаг с номером попытки и текстом
  * ошибки, error — красный. SQL-сэмплы показываются В САМИХ шагах: executing /
  * reviewing / card_ready несут sqlPreview|sql — под шагом раскрывающийся
- * моноширинный блок; planning перечисляет запланированные карточки.
+ * моноширинный блок; board_planned перечисляет запланированные карточки.
  */
 import { RUN_STEP_LABELS, type RunStep } from "@/lib/contracts";
 import type { InvestigationPhase } from "@/lib/hooks/useInvestigationRun";
@@ -159,12 +159,15 @@ function StepRow({ step, isActive }: { step: RunStep; isActive: boolean }) {
         {step.step !== "error" && !isHealing && step.message && (
           <p className="mt-0.5 text-[10px] text-muted">{truncate(step.message)}</p>
         )}
-        {/* План дашборда: какие карточки и каким инструментом. */}
-        {step.step === "planning" && step.cards && step.cards.length > 0 && (
+        {/* План дашборда: какие карточки каких видов. */}
+        {step.step === "board_planned" && step.cards.length > 0 && (
           <ul className="mt-1 flex flex-col gap-0.5">
-            {step.cards.map((c, i) => (
-              <li key={i} className="flex items-baseline gap-1.5 text-[10px] text-muted">
-                <span className="font-mono text-accent/80">{c.source}</span>
+            {step.cards.map((c) => (
+              <li
+                key={c.cardId}
+                className="flex items-baseline gap-1.5 text-[10px] text-muted"
+              >
+                <span className="font-mono text-accent/80">{c.kind}</span>
                 <span className="truncate">{c.title}</span>
               </li>
             ))}

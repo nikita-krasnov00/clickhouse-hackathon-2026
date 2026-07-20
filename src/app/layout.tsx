@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Insight Desk",
   description:
-    "Рабочее место оператора платформы: чат-агент над github_events с интерактивными карточками-расследованиями",
+    "Рабочее место оператора платформы: агент исследует данные в ClickHouse и собирает интерактивные карточки-расследования",
 };
 
 export default function RootLayout({

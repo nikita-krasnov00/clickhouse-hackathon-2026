@@ -4,35 +4,51 @@
  * C2/C6 — живое рабочее место: композер + лента карточек расследований.
  *
  * Вопрос (Enter или кнопка) → POST /api/ask → карточка InvestigationCard с
- * Realtime-подпиской. Клик по элементу карточки (C6):
- *   - action 'drill' → POST /api/drill → мгновенная дрилл-карточка (мимо LLM);
- *     drillId берётся из ClickTarget спека, по которому кликнули;
- *   - action 'why'   → POST /api/ask с контекстом клика → новый ран агента.
- * Дрилл-карточки кликабельны так же — рекурсия расследования.
+ * Realtime-подпиской. Клик по элементу карточки (C6) — всегда новый ран
+ * агента (action 'why') с ClickContext: датасет-специфичных дриллов нет,
+ * следующий слой раскапывает сам агент. Клик по чипу clarify/impossible
+ * внутри карточки (C2) — тоже новый ран, но обычным вопросом без контекста.
+ *
+ * Пресеты композера — не хардкод: на маунте GET /api/suggest подтягивает
+ * вопросы, сгенерированные по живому каталогу таблиц ClickHouse. Пусто или
+ * ошибка — блок пресетов просто не рисуется (suggestResponseSchema валиден и
+ * с пустым массивом).
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   askResponseSchema,
-  drillResponseSchema,
+  suggestResponseSchema,
   type ClickContext,
-  type ClickTarget,
   type ViewSpec,
 } from "@/lib/contracts";
 import {
   InvestigationCard,
   type Investigation,
 } from "@/components/InvestigationCard";
-import { DrillCard, type DrillItem } from "@/components/DrillCard";
 
-const EXAMPLE_QUESTIONS = [
-  "Что странного со звёздами solidSpoon/DashPlayer весной 2024?",
-  "Накручен ли xai-org/grok-1? Докажи",
-  "top repos by stars in March 2024",
-];
+/** Пресеты /api/suggest: null — ещё грузятся, [] — пусто/ошибка (блок скрыт). */
+function usePresetQuestions(): string[] | null {
+  const [presets, setPresets] = useState<string[] | null>(null);
 
-type FeedItem =
-  | { type: "run"; run: Investigation }
-  | { type: "drill"; drill: DrillItem };
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/suggest");
+        const body: unknown = await res.json().catch(() => null);
+        const parsed = suggestResponseSchema.safeParse(body);
+        if (!cancelled) setPresets(parsed.success ? parsed.data.questions : []);
+      } catch {
+        if (!cancelled) setPresets([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return presets;
+}
 
 async function askApi(
   question: string,
@@ -58,42 +74,6 @@ async function askApi(
   return parsed.data;
 }
 
-async function drillApi(
-  drillId: string,
-  params: ClickContext["selection"],
-): Promise<{ viewSpec: unknown; tookMs?: number }> {
-  const res = await fetch("/api/drill", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ drillId, params }),
-  });
-  const body: unknown = await res.json().catch(() => null);
-  if (!res.ok) {
-    const msg =
-      body && typeof body === "object" && "error" in body
-        ? String((body as { error: unknown }).error)
-        : `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-  const parsed = drillResponseSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new Error("Ответ /api/drill не соответствует контракту drillResponseSchema");
-  }
-  const tookHeader = res.headers.get("X-Drill-Ms");
-  return {
-    viewSpec: parsed.data.viewSpec,
-    tookMs: tookHeader ? Number(tookHeader) : undefined,
-  };
-}
-
-/** Каким классом элемента кликается каждый вид карточки (контракт ClickTarget). */
-const KIND_TO_ELEMENT: Partial<Record<ViewSpec["kind"], ClickTarget["on"]>> = {
-  timeline: "point",
-  leaderboard: "row",
-  histogram: "bucket",
-  heatmap: "cell",
-};
-
 function specTitle(spec: ViewSpec): string {
   return spec.kind === "verdict" ? "Вердикт расследования" : spec.title;
 }
@@ -107,27 +87,21 @@ function whyQuestion(ctx: ClickContext, spec: ViewSpec): string {
 }
 
 export function Workbench() {
-  const [items, setItems] = useState<FeedItem[]>([]);
+  const [runs, setRuns] = useState<Investigation[]>([]);
   const [question, setQuestion] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const presets = usePresetQuestions();
 
   const submit = useCallback((raw: string, context?: ClickContext) => {
     const q = raw.trim();
     if (!q) return;
     const id = crypto.randomUUID();
-    setItems((prev) => [
-      { type: "run", run: { id, question: q, askedAt: Date.now() } },
-      ...prev,
-    ]);
+    setRuns((prev) => [{ id, question: q, askedAt: Date.now() }, ...prev]);
     setQuestion("");
 
     const patchRun = (patch: Partial<Investigation>) =>
-      setItems((prev) =>
-        prev.map((it) =>
-          it.type === "run" && it.run.id === id
-            ? { type: "run", run: { ...it.run, ...patch } }
-            : it,
-        ),
+      setRuns((prev) =>
+        prev.map((run) => (run.id === id ? { ...run, ...patch } : run)),
       );
 
     void askApi(q, context)
@@ -141,53 +115,12 @@ export function Workbench() {
       );
   }, []);
 
-  const runDrill = useCallback(
-    (drillId: string, params: ClickContext["selection"], parentTitle: string) => {
-      const id = crypto.randomUUID();
-      setItems((prev) => [
-        {
-          type: "drill",
-          drill: { id, drillId, params, parentTitle, state: "loading" },
-        },
-        ...prev,
-      ]);
-
-      const patch = (p: Partial<DrillItem>) =>
-        setItems((prev) =>
-          prev.map((it) =>
-            it.type === "drill" && it.drill.id === id
-              ? { type: "drill", drill: { ...it.drill, ...p } }
-              : it,
-          ),
-        );
-
-      void drillApi(drillId, params)
-        .then(({ viewSpec, tookMs }) => patch({ state: "done", viewSpec, tookMs }))
-        .catch((err: unknown) =>
-          patch({
-            state: "error",
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        );
-    },
-    [],
-  );
-
-  /** C6: клик по элементу карточки — дрилл (быстрый путь) или новый ран агента. */
+  /** C6: клик по элементу карточки — новый ран агента с контекстом клика. */
   const handleClickContext = useCallback(
     (ctx: ClickContext, spec: ViewSpec) => {
-      const element = KIND_TO_ELEMENT[ctx.componentKind];
-      const target =
-        element && "clicks" in spec
-          ? spec.clicks.find((c) => c.on === element)
-          : undefined;
-      if (ctx.action === "drill" && target?.drillId) {
-        runDrill(target.drillId, ctx.selection, specTitle(spec));
-        return;
-      }
       submit(whyQuestion(ctx, spec), ctx);
     },
-    [runDrill, submit],
+    [submit],
   );
 
   const fillExample = useCallback((q: string) => {
@@ -213,7 +146,7 @@ export function Workbench() {
           autoComplete="off"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Спросите про github_events — например: «у какого репо подозрительный всплеск звёзд?»"
+          placeholder="Спросите про данные в ClickHouse — агент сам найдёт нужные таблицы"
           className="flex-1 bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted"
         />
         <button
@@ -225,50 +158,62 @@ export function Workbench() {
         </button>
       </form>
 
-      {/* Лента: новые карточки сверху; раны и дриллы вперемешку. */}
+      {/* Лента: новые карточки сверху. */}
       <section
         aria-label="Лента расследования"
         className="mt-4 flex flex-1 flex-col gap-3"
       >
-        {items.length === 0 && (
+        {runs.length === 0 && (
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="text-sm">
-              Задайте вопрос по <span className="font-mono">github_events</span> —
-              агент исследует схему, напишет SQL и вернёт интерактивные карточки.
+              Задайте вопрос по данным в ClickHouse — агент исследует схему,
+              выберет таблицы, напишет SQL и вернёт интерактивные карточки.
               Клики по точкам, строкам и ячейкам раскрывают следующий слой.
             </p>
-            <p className="mt-1.5 text-xs text-muted">Начните с примера:</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {EXAMPLE_QUESTIONS.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => fillExample(q)}
-                  className="rounded-full border border-border px-3 py-1.5 text-xs text-muted transition-colors hover:border-accent/60 hover:text-foreground"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
+            {/* Пресеты /api/suggest: пока грузится — skeleton-чипы; пусто/ошибка — блок скрыт. */}
+            {presets === null && (
+              <>
+                <p className="mt-1.5 text-xs text-muted">Начните с примера:</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {[96, 132, 84].map((w, i) => (
+                    <span
+                      key={i}
+                      aria-hidden
+                      className="h-7 animate-pulse rounded-full bg-border/60"
+                      style={{ width: w, animationDelay: `${i * 100}ms` }}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+            {presets !== null && presets.length > 0 && (
+              <>
+                <p className="mt-1.5 text-xs text-muted">Начните с примера:</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {presets.map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => fillExample(q)}
+                      className="rounded-full border border-border px-3 py-1.5 text-xs text-muted transition-colors hover:border-accent/60 hover:text-foreground"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
-        {items.map((it) =>
-          it.type === "run" ? (
-            <InvestigationCard
-              key={it.run.id}
-              investigation={it.run}
-              onClickContext={handleClickContext}
-            />
-          ) : (
-            <DrillCard
-              key={it.drill.id}
-              item={it.drill}
-              onClickContext={handleClickContext}
-              onRunDrill={runDrill}
-            />
-          ),
-        )}
+        {runs.map((run) => (
+          <InvestigationCard
+            key={run.id}
+            investigation={run}
+            onClickContext={handleClickContext}
+            onAsk={submit}
+          />
+        ))}
       </section>
     </>
   );

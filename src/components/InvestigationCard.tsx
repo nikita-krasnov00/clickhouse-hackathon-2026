@@ -4,21 +4,30 @@
  * C2 — карточка расследования одного рана investigate.
  *
  * Вопрос → подписка useRealtimeRun (через useInvestigationRun) → живой
- * прогресс конвейера (RunProgress) → финал:
- *   - done  → viewSpecs рендерятся готовым ViewSpecCard, а конвейер
- *             сворачивается в details «как я это делал»;
- *   - error → фоллбек «не смог — вот что пробовал»: список попыток healing,
- *             финальное сообщение и последний SQL — не пустой экран.
+ * прогресс конвейера (RunProgress) → карточки данных, в зависимости от того,
+ * как сложился ран:
+ *   - board_planned → сетка BoardGrid: скелеты по манифесту, гидратирующиеся
+ *                      в ViewSpecCard по мере card_ready/card_failed;
+ *   - clarify        → ClarifyCard: агенту не хватило вводных, ран завершён;
+ *   - impossible      → ImpossibleCard: по данным ответить нельзя, ран завершён;
+ *   - иначе (старые/потерянные стримы без манифеста) → фоллбек на viewSpecs,
+ *     как раньше.
+ * done остаётся сворачивающим прогресс в details «как я это делал»; error —
+ * фоллбек «не смог — вот что пробовал»: список попыток healing, финальное
+ * сообщение и последний SQL — не пустой экран.
  *
  * Если /api/ask вернул ошибку (runId нет) — карточка сразу в failed.
  */
-import type { ViewSpec } from "@/lib/contracts";
+import type { RunStep, ViewSpec } from "@/lib/contracts";
 import { useElapsedSeconds } from "@/lib/hooks/useElapsedSeconds";
 import {
   useInvestigationRun,
   type InvestigationRunState,
 } from "@/lib/hooks/useInvestigationRun";
 import { RunProgress } from "@/components/RunProgress";
+import { BoardGrid } from "@/components/BoardGrid";
+import { ClarifyCard } from "@/components/ClarifyCard";
+import { ImpossibleCard } from "@/components/ImpossibleCard";
 import {
   ViewSpecCard,
   type SpecClickHandler,
@@ -89,9 +98,12 @@ export function FailedFallback({
 export function InvestigationCard({
   investigation,
   onClickContext,
+  onAsk,
 }: {
   investigation: Investigation;
   onClickContext?: SpecClickHandler;
+  /** C2: клик по чипу clarify/impossible — новый ран тем же submit-флоу Workbench. */
+  onAsk?: (question: string) => void;
 }) {
   const { id, question, askedAt, runId, publicAccessToken, askError } = investigation;
   const state = useInvestigationRun(runId, publicAccessToken);
@@ -101,6 +113,14 @@ export function InvestigationCard({
   const isLive = phase === "connecting" || phase === "running";
   const elapsed = useElapsedSeconds(askedAt, isLive);
   const badge = PHASE_BADGE[phase];
+
+  // Два ранних терминальных исхода — взаимоисключающи и исключают board_planned.
+  const clarifyStep = state.steps.find(
+    (s): s is Extract<RunStep, { step: "clarify" }> => s.step === "clarify",
+  );
+  const impossibleStep = state.steps.find(
+    (s): s is Extract<RunStep, { step: "impossible" }> => s.step === "impossible",
+  );
 
   return (
     <article
@@ -146,19 +166,37 @@ export function InvestigationCard({
 
       {phase === "failed" && <FailedFallback state={state} askError={askError} />}
 
-      {/* Карточки рендерятся по мере card_ready — ещё во время рана. */}
-      {state.viewSpecs && state.viewSpecs.length > 0 && (
-        <div className="mt-3 flex flex-col gap-3">
-          {state.viewSpecs.map((spec: ViewSpec, i: number) => (
-            <ViewSpecCard
-              key={`${id}-spec-${i}`}
-              cardId={`${id}-spec-${i}`}
-              spec={spec}
-              onClickContext={onClickContext}
-            />
-          ))}
-        </div>
+      {/* clarify/impossible — ранние терминальные исходы, до board_planned. */}
+      {!askError && clarifyStep && (
+        <ClarifyCard step={clarifyStep} originalQuestion={question} onAsk={onAsk} />
       )}
+      {!askError && !clarifyStep && impossibleStep && (
+        <ImpossibleCard step={impossibleStep} onAsk={onAsk} />
+      )}
+
+      {/* Манифест есть — сетка скелетов/карточек на его местах (C2). */}
+      {!askError && !clarifyStep && !impossibleStep && state.boardCards.length > 0 && (
+        <BoardGrid cards={state.boardCards} onClickContext={onClickContext} />
+      )}
+
+      {/* Манифеста не было (старые/потерянные стримы) — как раньше, по viewSpecs. */}
+      {!askError &&
+        !clarifyStep &&
+        !impossibleStep &&
+        state.boardCards.length === 0 &&
+        state.viewSpecs &&
+        state.viewSpecs.length > 0 && (
+          <div className="mt-3 flex flex-col gap-3">
+            {state.viewSpecs.map((spec: ViewSpec, i: number) => (
+              <ViewSpecCard
+                key={`${id}-spec-${i}`}
+                cardId={`${id}-spec-${i}`}
+                spec={spec}
+                onClickContext={onClickContext}
+              />
+            ))}
+          </div>
+        )}
     </article>
   );
 }

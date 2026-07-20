@@ -15,11 +15,16 @@
  *   - sqlPreview — последний sqlPreview из шагов reviewing/executing;
  *   - viewSpecs — из шага done (приходит прямо в Realtime-стриме) либо из
  *                 run.output — отдельный fetch результата не нужен;
+ *   - boardCards — манифест board_planned, спроецированный на card_ready/
+ *                 card_failed по cardId (skeleton-сетка C2 рисуется сразу
+ *                 по манифесту, карточки гидратируются на своих местах);
+ *                 пусто, если board_planned не было — компонент фоллбечит
+ *                 на viewSpecs, как раньше;
  *   - phase     — connecting | running | done | failed (для рендера).
  */
 import { useEffect, useMemo, useState } from "react";
 import { useRealtimeRun } from "@trigger.dev/react-hooks";
-import { runStepSchema, type RunStep, type ViewSpec } from "@/lib/contracts";
+import { runStepSchema, type RunStep, type ViewKind, type ViewSpec } from "@/lib/contracts";
 import type { investigateTask } from "@/trigger/investigate";
 
 /**
@@ -63,6 +68,26 @@ function usePolledRun(runId: string | undefined, active: boolean): PolledRun | u
 
 export type InvestigationPhase = "connecting" | "running" | "done" | "failed";
 
+/**
+ * Карточка манифеста board_planned, спроецированная на её прогресс:
+ *   pending → скелет ещё ждёт card_ready/card_failed со своим cardId;
+ *   ready   → скелет гидратируется в spec (+ sql, если карточка sql-based);
+ *   failed  → скелет схлопывается в компактную карточку ошибки.
+ * Внеплановые card_ready без cardId (или без совпадения в манифесте) тоже
+ * приходят как ready — см. computeBoardCards.
+ */
+export type BoardCard =
+  | { cardId: string; kind: ViewKind; title: string; status: "pending" }
+  | {
+      cardId: string;
+      kind: ViewKind;
+      title: string;
+      status: "ready";
+      spec: ViewSpec;
+      sql?: string;
+    }
+  | { cardId: string; kind: ViewKind; title: string; status: "failed"; error: string };
+
 export type InvestigationRunState = {
   phase: InvestigationPhase;
   /** История шагов конвейера (строго по runStepSchema). */
@@ -73,6 +98,11 @@ export type InvestigationRunState = {
    * (прогрессивная загрузка); фоллбек для старых ранов — done/run.output.
    */
   viewSpecs: ViewSpec[] | undefined;
+  /**
+   * Карточки в порядке манифеста board_planned (см. BoardCard); пусто, если
+   * манифеста не было вовсе — тогда рендер идёт по viewSpecs.
+   */
+  boardCards: BoardCard[];
   /** Терминальная ошибка: шаг error, ошибка подписки или статус рана. */
   errorMessage: string | undefined;
   /** Сырой статус рана Trigger.dev (для отладочной подписи). */
@@ -97,6 +127,70 @@ function parseSteps(raw: unknown): RunStep[] {
     if (parsed.success) steps.push(parsed.data);
   }
   return steps;
+}
+
+/** Заголовок внеплановой карточки: verdict особый — в спеке нет поля title. */
+function specBoardTitle(spec: ViewSpec): string {
+  return spec.kind === "verdict" ? "Вердикт расследования" : spec.title;
+}
+
+/**
+ * Собирает boardCards: манифест board_planned (порядок сохраняется) со
+ * статусом каждой карточки, обновлённым по card_ready/card_failed с её
+ * cardId. card_ready/card_failed без совпадения в манифесте (или когда
+ * манифеста не было вовсе) не теряются — card_ready уходит в хвост как
+ * готовая внеплановая карточка, card_failed без пары в манифесте отбрасывается
+ * (её скелету всё равно неоткуда взяться).
+ */
+function computeBoardCards(steps: RunStep[]): BoardCard[] {
+  const plan = steps.find((s) => s.step === "board_planned");
+  if (!plan) return [];
+
+  const byId = new Map<string, BoardCard>(
+    plan.cards.map((c) => [
+      c.cardId,
+      { cardId: c.cardId, kind: c.kind, title: c.title, status: "pending" as const },
+    ]),
+  );
+  const extra: BoardCard[] = [];
+
+  for (const s of steps) {
+    if (s.step === "card_ready") {
+      const known = s.cardId ? byId.get(s.cardId) : undefined;
+      if (known) {
+        byId.set(known.cardId, {
+          cardId: known.cardId,
+          kind: known.kind,
+          title: known.title,
+          status: "ready",
+          spec: s.viewSpec,
+          sql: s.sql,
+        });
+      } else {
+        extra.push({
+          cardId: s.cardId ?? `extra-${extra.length}`,
+          kind: s.viewSpec.kind,
+          title: specBoardTitle(s.viewSpec),
+          status: "ready",
+          spec: s.viewSpec,
+          sql: s.sql,
+        });
+      }
+    } else if (s.step === "card_failed" && s.cardId) {
+      const known = byId.get(s.cardId);
+      if (known) {
+        byId.set(known.cardId, {
+          cardId: known.cardId,
+          kind: known.kind,
+          title: known.title,
+          status: "failed",
+          error: s.error,
+        });
+      }
+    }
+  }
+
+  return [...plan.cards.map((c) => byId.get(c.cardId)!), ...extra];
 }
 
 export function useInvestigationRun(
@@ -140,6 +234,8 @@ export function useInvestigationRun(
           : readySpecs
         : finalSpecs;
 
+    const boardCards = computeBoardCards(steps);
+
     const errorStep = steps.find((s) => s.step === "error");
     const failed =
       Boolean(errorStep) ||
@@ -160,6 +256,7 @@ export function useInvestigationRun(
       steps,
       lastStep,
       viewSpecs,
+      boardCards,
       errorMessage,
       runStatus: status,
     };

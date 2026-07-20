@@ -26,6 +26,7 @@ import { NetworkGraphCard } from "./NetworkGraphCard";
 import { CalendarHeatmapCard } from "./CalendarHeatmapCard";
 import { BigNumberCard } from "./BigNumberCard";
 import { ScatterCard } from "./ScatterCard";
+import { MapCard } from "./MapCard";
 
 type CommonProps = {
   cardId: string;
@@ -34,8 +35,8 @@ type CommonProps = {
 
 /**
  * Наружу ViewSpecCard отдаёт клик вместе с провалидированным спеком (C6):
- * обработчику ленты нужен ClickTarget.drillId, а ClickContext его не несёт —
- * лента находит цель в spec.clicks по виду элемента.
+ * обработчику ленты спек нужен для человекочитаемого заголовка follow-up
+ * вопроса и доступа к clicks-декларации.
  */
 export type SpecClickHandler = (ctx: ClickContext, spec: ViewSpec) => void;
 
@@ -43,7 +44,7 @@ type RendererProps<K extends ViewKind> = CommonProps & {
   spec: Extract<ViewSpec, { kind: K }>;
 };
 
-/** Реестр kind → рендерер. `satisfies` гарантирует ровно восемь видов. */
+/** Реестр kind → рендерер. `satisfies` гарантирует полноту по всем видам. */
 const RENDERERS = {
   timeline: (p: RendererProps<"timeline">) => <TimelineCard {...p} />,
   leaderboard: (p: RendererProps<"leaderboard">) => <LeaderboardCard {...p} />,
@@ -53,6 +54,7 @@ const RENDERERS = {
   verdict: (p: RendererProps<"verdict">) => <VerdictCard spec={p.spec} />,
   bignumber: (p: RendererProps<"bignumber">) => <BigNumberCard spec={p.spec} />,
   scatter: (p: RendererProps<"scatter">) => <ScatterCard {...p} />,
+  map: (p: RendererProps<"map">) => <MapCard {...p} />,
 } satisfies { [K in ViewKind]: (p: RendererProps<K>) => ReactNode };
 
 function renderByKind(spec: ViewSpec, common: CommonProps): ReactNode {
@@ -64,7 +66,12 @@ function renderByKind(spec: ViewSpec, common: CommonProps): ReactNode {
   return render({ ...common, spec });
 }
 
-function CardShell({
+/**
+ * Общая рамка карточки: kind-бейдж + title + опциональный акцент. Экспортится
+ * для BoardGrid (C2) — скелеты board_planned используют ровно ту же рамку,
+ * чтобы гидратация в готовую ViewSpecCard не «прыгала» по вёрстке.
+ */
+export function CardShell({
   kind,
   title,
   accent = false,

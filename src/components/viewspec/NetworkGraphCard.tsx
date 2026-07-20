@@ -13,9 +13,9 @@
  * структурные хабы, режутся последними), лишние отбрасываются с пометкой
  * «показаны топ-N».
  *
- * Цвет узла — подозрительность: color-mix от нейтрального muted к статусному
- * critical по score; узлы без score (репозитории) — series-1. Идентичность не
- * только цветом: легенда + подпись + score в тултипе.
+ * Цвет узла — аномальность: color-mix от нейтрального muted к статусному
+ * critical по score; узлы без score (структурные хабы) — series-1. Идентичность
+ * не только цветом: легенда + подпись + score в тултипе.
  *
  * Клик узла: в контракте у graph нет clicks[] (решение J1) — клик захардкожен
  * как action:'why' с selection { node: id }, ClickContext это уже позволяет.
@@ -224,7 +224,7 @@ export function NetworkGraphCard({
             className="inline-block h-2.5 w-2.5 rounded-full"
             style={{ background: "var(--viz-series-1)" }}
           />
-          репозиторий
+          хаб
         </span>
         <span className="flex items-center gap-1.5">
           <span
@@ -235,7 +235,7 @@ export function NetworkGraphCard({
                 "linear-gradient(90deg, var(--muted), var(--viz-critical))",
             }}
           />
-          подозрительность score 0 → 1
+          аномальность (score 0 → 1)
         </span>
       </div>
 

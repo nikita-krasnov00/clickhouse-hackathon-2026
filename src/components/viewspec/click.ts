@@ -4,7 +4,7 @@
  *
  *  - selection = поля кликнутого элемента, перечисленные в target.selectionKeys,
  *    под теми же именами; null/undefined-значения опускаются;
- *  - action    = target.drillId есть → 'drill', нет → 'why'.
+ *  - action    = всегда 'why' (v2: дриллы удалены, клик — новый ран агента).
  *
  * Доступные поля элемента фиксированы по виду:
  *   point  → timeline: { t, v, series }; scatter: { x, y, label? }
@@ -20,6 +20,7 @@ import type {
   ClickContext,
   ClickTarget,
   HeatmapCell,
+  MapPoint,
   Row,
   ScatterPoint,
   SeriesPoint,
@@ -50,7 +51,7 @@ export function buildClickContext(args: {
     cardId,
     componentKind,
     selection,
-    action: target.drillId ? "drill" : "why",
+    action: "why",
   };
 }
 
@@ -72,6 +73,11 @@ export function scatterPointElementFields(
   point: ScatterPoint,
 ): ClickableElementFields {
   return { x: point.x, y: point.y, label: point.label };
+}
+
+/** point на карте → lat, lon, value, label (отсутствующие ключи опускаются). */
+export function mapPointElementFields(point: MapPoint): ClickableElementFields {
+  return { lat: point.lat, lon: point.lon, value: point.value, label: point.label };
 }
 
 /** bucket → label, count. */
