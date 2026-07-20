@@ -28,12 +28,15 @@ q "ALTER USER agent_scratch IDENTIFIED BY '$AGENT_SCRATCH_PASSWORD'"
 
 echo "== grants: agent_ro (только чтение) =="
 q "GRANT SELECT ON github.* TO agent_ro"
+q "GRANT SELECT ON tpcds.* TO agent_ro"
+q "GRANT SELECT ON stackoverflow.* TO agent_ro"
 q "GRANT SELECT ON scratch.* TO agent_ro"
 q "GRANT SELECT ON default.* TO agent_ro"
 
 echo "== grants: agent_scratch (workspace агента) =="
 q "GRANT SELECT, INSERT, ALTER, CREATE TABLE, CREATE VIEW, DROP TABLE, DROP VIEW, TRUNCATE ON scratch.* TO agent_scratch"
 q "GRANT SELECT ON github.* TO agent_scratch"
+q "GRANT SELECT ON tpcds.* TO agent_scratch"
 q "GRANT SELECT ON default.* TO agent_scratch"
 
 echo "== settings profile: лимиты agent_ro =="
