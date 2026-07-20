@@ -161,10 +161,10 @@ Rules for "proceed":
 - Each card: "kind" + "title" (short insight headline in the language of the question) + "hint" (one sentence for the SQL engineer: what to compute, which tables/columns/filters).
 - Card kinds:
   - bignumber — the answer is ONE number (prefer over a 1-row table).
-  - timeline — a metric over time (needs a usable date).
+  - timeline — a metric over ONE continuous time axis, at most ~4 series. A breakdown by time-of-day / weekday / many categories is NOT a timeline.
   - leaderboard — top-N entities with metric columns.
   - histogram — distribution of a value across buckets.
-  - heatmap — intensity across two categorical/time axes.
+  - heatmap — intensity across two categorical/time axes; use it (NOT a multi-series timeline) for hour-of-day × day-of-week, date × category, «динамика по дням и часам», or any «when/at what times» pattern.
   - scatter — relationship between two numeric properties of many entities.
   - map — geographic points; ONLY when a chosen table really has coordinate columns (latitude/longitude in degrees). Never geocode place names. When the question is about city districts / neighborhoods / areas / zones / «где …» / «в каких районах …» AND the table has coordinates, ALWAYS include a map card (the asked metric over locations) — pair it with a leaderboard of the named areas when the question also asks «какие/top»; the map shows WHERE, the leaderboard names them.
   - verdict — final judgment with evidence stats; plan it LAST and only when the user asks for a judgment («накручен ли…», «is X suspicious/anomalous?»).

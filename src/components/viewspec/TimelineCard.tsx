@@ -37,6 +37,21 @@ const SERIES_COLORS = [
   "var(--viz-series-4)",
 ];
 
+/**
+ * Палитра честно различает не больше стольких серий (валидатор dataviz: 8 hue
+ * на нашей поверхности уже уходят в CVD-floor). Больше серий — это, как правило,
+ * двумерный паттерн (час × день), которому место в heatmap, а не в timeline.
+ */
+const MAX_SERIES = SERIES_COLORS.length;
+
+/**
+ * Бюджет ВИДИМЫХ маркеров-точек: пока в окне их не больше — рисуем и точки, и
+ * клик-таргеты; больше (десятки-сотни на плотном ряду) — только линии, иначе
+ * маркеры сливаются в облако и прячут сами линии. При зуме окно сужается,
+ * точек в нём становится мало — маркеры и клики возвращаются автоматически.
+ */
+const MARKER_BUDGET = 60;
+
 const numFmt = new Intl.NumberFormat("ru-RU");
 const dayFmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
 const timeFmt = new Intl.DateTimeFormat("ru-RU", {
@@ -83,9 +98,25 @@ export function TimelineCard({
   const pointTarget = findClickTarget(spec.clicks, "point");
   const clickable = Boolean(pointTarget && onClickContext);
 
+  // Серий не больше палитры: избыток НЕ раскрашиваем в повторяющиеся цвета
+  // (это вводило бы в заблуждение — 03–06 и 18–21 одним цветом), а показываем
+  // крупнейшие по объёму, честно подписав, сколько скрыто.
+  const { series, hiddenSeries } = useMemo(() => {
+    if (spec.series.length <= MAX_SERIES) {
+      return { series: spec.series, hiddenSeries: 0 };
+    }
+    const total = (s: TimelineSpec["series"][number]) =>
+      s.points.reduce((acc, p) => acc + p.v, 0);
+    const byVolume = [...spec.series].sort((a, b) => total(b) - total(a));
+    return {
+      series: byVolume.slice(0, MAX_SERIES),
+      hiddenSeries: spec.series.length - MAX_SERIES,
+    };
+  }, [spec.series]);
+
   // Полный диапазон данных — от него считаются границы зума и панорамы.
   const domain = useMemo(() => {
-    const all = spec.series.flatMap((s) => s.points.map((p) => Date.parse(p.t)));
+    const all = series.flatMap((s) => s.points.map((p) => Date.parse(p.t)));
     if (all.length === 0) return null;
     let min = Math.min(...all);
     let max = Math.max(...all);
@@ -94,14 +125,14 @@ export function TimelineCard({
       max += 12 * 3600_000;
     }
     return { min, max };
-  }, [spec.series]);
+  }, [series]);
 
   const layout = useMemo(() => {
     if (!domain) return null;
     const tMin = view?.min ?? domain.min;
     const tMax = view?.max ?? domain.max;
 
-    const parsed = spec.series.map((s) =>
+    const parsed = series.map((s) =>
       s.points.map((p) => ({ ...p, ts: Date.parse(p.t) })),
     );
     // Ось Y — под видимые точки (при зуме график «дышит» по вертикали).
@@ -128,8 +159,11 @@ export function TimelineCard({
     const fmtT = (ts: number) =>
       spanDays < 3 ? timeFmt.format(ts) : dayFmt.format(ts);
 
-    return { tMin, tMax, yMax, parsed, x, y, tAt, yTicks, xTicks, fmtT };
-  }, [spec.series, domain, view]);
+    // Плотность видимого окна решает, рисовать ли точки-маркеры (см. MARKER_BUDGET).
+    const showMarkers = visible.length <= MARKER_BUDGET;
+
+    return { tMin, tMax, yMax, parsed, x, y, tAt, yTicks, xTicks, fmtT, showMarkers };
+  }, [series, domain, view]);
 
   // ---- зум/панорама -------------------------------------------------------
 
@@ -240,7 +274,7 @@ export function TimelineCard({
       </p>
     );
   }
-  const { tMin, tMax, parsed, x, y, yTicks, xTicks, fmtT } = layout;
+  const { tMin, tMax, parsed, x, y, yTicks, xTicks, fmtT, showMarkers } = layout;
   const zoomed = view !== null;
 
   const anomaly = spec.anomalyWindow
@@ -257,7 +291,7 @@ export function TimelineCard({
 
   const fire = (seriesIdx: number, pointIdx: number) => {
     if (!pointTarget || !onClickContext) return;
-    const s = spec.series[seriesIdx];
+    const s = series[seriesIdx];
     onClickContext(
       buildClickContext({
         cardId,
@@ -270,15 +304,15 @@ export function TimelineCard({
 
   const hoveredPoint =
     hover !== null
-      ? spec.series[hover.seriesIdx]?.points[hover.pointIdx]
+      ? series[hover.seriesIdx]?.points[hover.pointIdx]
       : null;
 
   return (
     <div>
       {/* Легенда — только при ≥2 сериях (одна серия названа заголовком). */}
-      {spec.series.length >= 2 && (
+      {series.length >= 2 && (
         <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 px-1">
-          {spec.series.map((s, i) => (
+          {series.map((s, i) => (
             <span key={s.name} className="flex items-center gap-1.5 text-xs text-muted">
               <span
                 aria-hidden
@@ -410,7 +444,7 @@ export function TimelineCard({
                 .join(" ");
               return (
                 <path
-                  key={spec.series[si].name}
+                  key={series[si].name}
                   d={d}
                   fill="none"
                   stroke={color}
@@ -423,10 +457,13 @@ export function TimelineCard({
           </g>
 
           {/* Точки: видимые r=4 с кольцом поверхности + хит-таргет r=14.
-              Рендерятся только точки видимого окна — вне зума их нет и в DOM. */}
-          {parsed.map((points, si) => {
+              Только точки видимого окна и только когда их не слишком много
+              (showMarkers) — иначе плотный ряд превращается в облако и прячет
+              линии; на зуме окно сужается и точки/клики возвращаются. */}
+          {showMarkers &&
+            parsed.map((points, si) => {
             const color = SERIES_COLORS[si % SERIES_COLORS.length];
-            const s = spec.series[si];
+            const s = series[si];
             return points.map((p, pi) => {
               if (p.ts < tMin || p.ts > tMax) return null;
               const cx = x(p.ts);
@@ -531,7 +568,7 @@ export function TimelineCard({
                     SERIES_COLORS[hover.seriesIdx % SERIES_COLORS.length],
                 }}
               />
-              {spec.series[hover.seriesIdx].name} · {fmtT(Date.parse(hoveredPoint.t))}
+              {series[hover.seriesIdx].name} · {fmtT(Date.parse(hoveredPoint.t))}
             </div>
             {clickable && pointTarget?.label && (
               <div className="mt-0.5 text-[10px] whitespace-nowrap text-accent">
@@ -543,6 +580,13 @@ export function TimelineCard({
       </div>
 
       <p className="mt-1 px-1 text-[10px] text-muted/80">
+        {hiddenSeries > 0 && (
+          <span style={{ color: "var(--viz-warning)" }}>
+            показаны {MAX_SERIES} серии из {MAX_SERIES + hiddenSeries} (по объёму);
+            для полной картины двух измерений уместнее heatmap ·{" "}
+          </span>
+        )}
+        {!showMarkers && "точки скрыты при плотном ряде — приблизьте для деталей · "}
         тяните по графику — зум диапазона · pinch/Ctrl+колесо — зум ·
         Shift+колесо — панорама · двойной клик — сброс
       </p>
