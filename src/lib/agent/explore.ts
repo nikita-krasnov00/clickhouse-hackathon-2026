@@ -1,33 +1,30 @@
 /**
- * B2 — exploration: компактный JSON-контекст схемы для промпта LLM.
+ * B2 — exploration, двухфазная и без единого захардкоженного имени таблицы.
  *
- * Таблицы НЕ захардкожены: exploreSchema() сам обнаруживает их через
- * system.tables/system.columns под agent_ro — что видно грантам agent_ro,
- * то и есть скоуп агента. Правила:
- *   - список таблиц: все базы, кроме системных и служебной scratch
- *     (роллапы A4 и кэши — не для контекста LLM), только непустые
- *     не-View таблицы; берём топ-MAX_TABLES по total_rows;
- *   - приоритетная таблица (config.dataset.githubEventsTable) всегда
- *     идёт первой в контексте;
+ * Фаза A — catalogTables(): дешёвый каталог ВСЕХ таблиц, видимых agent_ro
+ * (system.tables + system.columns, без статистики и сэмплов — сотни
+ * миллисекунд). Каталог уходит в триаж (triage.ts): КАКИЕ таблицы относятся
+ * к вопросу, решает LLM в момент запроса — никакой «приоритетной таблицы»
+ * из конфига больше нет. Гранты agent_ro = скоуп агента.
+ *
+ * Фаза B — exploreTables(): глубокая разведка ТОЛЬКО выбранных триажем таблиц:
  *   - колонка даты — эвристика: первая колонка типа Date/DateTime* с
- *     предпочтением имён created_at → *_at → date/time/day/ts; для
- *     приоритетной таблицы переопределяется конфигом (GITHUB_EVENTS_DATE_COLUMN);
+ *     предпочтением имён created_at → *_at → date/time/day/ts;
  *   - ключевые колонки — до MAX_KEY_COLUMNS: Enum* и LowCardinality(String)
  *     в порядке схемы, добор — String с малым uniq по сэмплу; для каждой
  *     считаются кардинальность и топ значений. Дорогие uniq на таблицах
- *     >BIG_TABLE_ROWS строк считаются uniqCombined по окну последних дней
- *     либо по LIMIT-сэмплу — чтобы уложиться в 30-сек таймаут agent_ro;
- *   - count()/min/max даты и 3 сэмпл-строки — как раньше.
+ *     >BIG_TABLE_ROWS строк — по LIMIT-сэмплу, топ-N — только для
+ *     низкокардинальных колонок; всё с бюджетом времени (break, не ошибка);
+ *   - min/max даты и 3 сэмпл-строки.
  *
- * Персистентного кэша НЕТ: вся информация и так живёт в ClickHouse, поэтому
- * exploration выполняется живьём на каждый ран (см. getSchemaContext — только
- * короткая мемоизация в памяти процесса, чтобы параллельные раны не дублировали
- * одинаковые запросы). Контекст читает конвейер investigate (шаг exploring,
- * pipeline.ts) и промпт text-to-SQL (B4).
+ * Персистентного кэша НЕТ: вся информация и так живёт в ClickHouse; только
+ * короткая мемоизация каталога в памяти процесса (getCatalog), чтобы
+ * параллельные раны в одном воркере не дублировали одинаковые запросы.
+ * Контекст читают конвейер investigate (pipeline.ts) и промпты триажа и
+ * text-to-SQL (triage.ts, generate-sql.ts).
  */
 import type { ClickHouseClient } from "@clickhouse/client";
 import { createReadonlyClient } from "@/lib/clickhouse";
-import { config } from "@/lib/config";
 
 // ---------------------------------------------------------------------------
 // Форма контекста
@@ -66,8 +63,12 @@ export type SchemaContext = {
 // Параметры обнаружения
 // ---------------------------------------------------------------------------
 
-/** Сколько таблиц максимум попадает в контекст (не раздуваем промпт). */
+/** Сколько таблиц максимум попадает в контекст legacy-прохода exploreSchema. */
 const MAX_TABLES = 5;
+/** Потолок каталога фазы A — защита промпта триажа от гигантских инстансов. */
+const MAX_CATALOG_TABLES = 40;
+/** Потолок глубокой разведки фазы B — триаж не должен выбирать больше. */
+export const MAX_DEEP_TABLES = 4;
 /** Сколько ключевых (низкокардинальных) колонок берём на таблицу. */
 const MAX_KEY_COLUMNS = 3;
 /** Сколько топ-значений собираем по каждой ключевой колонке. */
@@ -159,6 +160,84 @@ async function discoverTables(client: ClickHouseClient): Promise<DiscoveredTable
 }
 
 // ---------------------------------------------------------------------------
+// Фаза A: каталог всех видимых таблиц (дёшево, для триажа)
+// ---------------------------------------------------------------------------
+
+/** Компактная запись каталога: триажу LLM хватает, чтобы выбрать таблицы. */
+export type CatalogTable = {
+  /** Полное имя `db.table`. */
+  table: string;
+  rowCount: number;
+  sortingKey: string[];
+  /** Эвристика: лучшая Date/DateTime*-колонка; пустая строка — нет такой. */
+  dateColumn: string;
+  columns: ColumnInfo[];
+};
+
+/** Все колонки всех видимых таблиц ОДНИМ запросом: `db.table` → колонки. */
+async function fetchAllColumns(
+  client: ClickHouseClient,
+): Promise<Map<string, ColumnInfo[]>> {
+  const rs = await client.query({
+    query: `
+      SELECT database, table, name, type, comment
+      FROM system.columns
+      WHERE database NOT IN {hidden:Array(String)}
+      ORDER BY database, table, position
+    `,
+    query_params: { hidden: [...SYSTEM_DATABASES, ...HIDDEN_DATABASES] },
+    format: "JSONEachRow",
+  });
+  const rows = await rs.json<{
+    database: string;
+    table: string;
+    name: string;
+    type: string;
+    comment: string;
+  }>();
+  const byTable = new Map<string, ColumnInfo[]>();
+  for (const r of rows) {
+    const key = `${r.database}.${r.table}`;
+    const list = byTable.get(key) ?? [];
+    list.push({
+      name: r.name,
+      type: compactType(r.type),
+      ...(r.comment ? { comment: r.comment } : {}),
+    });
+    byTable.set(key, list);
+  }
+  return byTable;
+}
+
+/**
+ * Фаза A exploration: полный каталог видимых таблиц БЕЗ дорогой статистики —
+ * только system.tables + system.columns (сотни миллисекунд на любом инстансе).
+ * Читает триаж (triage.ts): LLM сам решает, какие таблицы относятся к вопросу.
+ */
+export async function catalogTables(
+  client: ClickHouseClient,
+): Promise<CatalogTable[]> {
+  const [discovered, columnsByTable] = await Promise.all([
+    discoverTables(client),
+    fetchAllColumns(client),
+  ]);
+  return discovered
+    .slice(0, MAX_CATALOG_TABLES)
+    .map((d) => {
+      const table = `${d.database}.${d.name}`;
+      const columns = columnsByTable.get(table) ?? [];
+      return {
+        table,
+        rowCount: d.totalRows,
+        sortingKey: d.sortingKey,
+        dateColumn: pickDateColumn(columns),
+        columns,
+      };
+    })
+    .filter((t) => t.columns.length > 0);
+}
+
+// ---------------------------------------------------------------------------
 // Эвристики по типам и именам колонок
 // ---------------------------------------------------------------------------
 
@@ -198,14 +277,12 @@ function dateNameScore(name: string): number {
 }
 
 /**
- * Колонка даты: конфигное переопределение (если такая колонка есть и она
- * временнáя), иначе лучшая Date/DateTime*-колонка по имени, при равенстве —
- * первая по порядку схемы.
+ * Колонка даты: лучшая Date/DateTime*-колонка по имени, при равенстве — первая
+ * по порядку схемы. Пустая строка, если временнЫх колонок нет вовсе (например,
+ * факт-таблицы звёздных схем держат дату числовым ключом *_sk на измерение —
+ * это решает LLM по каталогу, не эвристика).
  */
-function pickDateColumn(columns: ColumnInfo[], preferred?: string): string {
-  if (preferred && columns.some((c) => c.name === preferred && isDateType(c.type))) {
-    return preferred;
-  }
+function pickDateColumn(columns: ColumnInfo[]): string {
   let best = "";
   let bestScore = Infinity;
   for (const c of columns) {
@@ -353,13 +430,11 @@ type TableTarget = {
   totalRows: number;
   /** ORDER BY / первичный ключ (из discoverTables). */
   sortingKey: string[];
-  /** Переопределение колонки даты (конфиг приоритетной таблицы). */
-  preferredDateColumn?: string;
   /**
-   * Глубокое исследование (кардинальности + топ-N значений) — только для
-   * приоритетной таблицы: это самые дорогие запросы, а exploration живёт
-   * на каждом ране. Второстепенным таблицам хватает колонок, диапазона дат
-   * и сэмплов — LLM сможет их запрашивать, просто без готовой статистики.
+   * Глубокое исследование (кардинальности + топ-N значений) — самые дорогие
+   * запросы exploration. В конвейере v2 глубоко исследуются ВСЕ выбранные
+   * триажем таблицы (их максимум MAX_DEEP_TABLES); в legacy-проходе
+   * exploreSchema — только самая большая.
    */
   deep: boolean;
 };
@@ -373,7 +448,7 @@ async function exploreTable(
   if (columns.length === 0) {
     throw new Error(`system.columns не вернул колонок для ${target.table}`);
   }
-  const dateColumn = pickDateColumn(columns, target.preferredDateColumn);
+  const dateColumn = pickDateColumn(columns);
 
   // Все независимые стадии — ПАРАЛЛЕЛЬНО (латентность = максимум, не сумма):
   // min/max даты, сэмпл-строки, статистика ключевых колонок. count() не нужен —
@@ -432,47 +507,26 @@ async function exploreTable(
   };
 }
 
-/** Приоритетная таблица конфига — первой, остальные по убыванию строк. */
-function sortContexts(contexts: SchemaContext[]): SchemaContext[] {
-  const priority = config.dataset.githubEventsTable;
-  return [...contexts].sort(
-    (a, b) =>
-      Number(b.table === priority) - Number(a.table === priority) ||
-      b.rowCount - a.rowCount,
-  );
-}
-
 /**
- * Exploration без захардкоженных имён: обнаруживает таблицы динамически,
- * приоритетную (config.dataset.githubEventsTable) ставит первой, берёт
- * топ-MAX_TABLES по размеру. Проблема одной таблицы не валит весь проход.
+ * Общий пул исследования: таблицы параллельно, но с ОГРАНИЧЕННОЙ
+ * конкурентностью — безлимитный Promise.all даёт всплеск тяжёлых запросов на
+ * один клиент, и ClickHouse Cloud под нагрузкой рвёт соединения (ECONNRESET).
+ * Порядок результата повторяет порядок targets; проблема одной таблицы не
+ * валит весь проход.
  */
-export async function exploreSchema(client: ClickHouseClient): Promise<SchemaContext[]> {
-  const discovered = await discoverTables(client);
-  const priority = config.dataset.githubEventsTable;
-  const ordered = [
-    ...discovered.filter((d) => `${d.database}.${d.name}` === priority),
-    ...discovered.filter((d) => `${d.database}.${d.name}` !== priority),
-  ].slice(0, MAX_TABLES);
-  if (ordered.length === 0) {
-    throw new Error(
-      "exploreSchema: agent_ro не видит ни одной непустой таблицы данных — проверь гранты (system.tables пуст за вычетом служебных баз)",
-    );
-  }
-
-  // Таблицы исследуются параллельно, но с ОГРАНИЧЕННОЙ конкурентностью:
-  // безлимитный Promise.all даёт всплеск из ~15 тяжёлых запросов на один
-  // клиент — ClickHouse Cloud под нагрузкой рвёт соединения (ECONNRESET).
-  // Пул в EXPLORE_CONCURRENCY воркеров держит латентность ~максимума по
-  // таблице, не устраивая шторм.
-  const settled: (SchemaContext | undefined)[] = new Array(ordered.length);
+async function runExploration(
+  client: ClickHouseClient,
+  targets: DiscoveredTable[],
+  deepFor: (index: number) => boolean,
+): Promise<SchemaContext[]> {
+  const settled: (SchemaContext | undefined)[] = new Array(targets.length);
   let next = 0;
   await Promise.all(
-    Array.from({ length: Math.min(EXPLORE_CONCURRENCY, ordered.length) }, async () => {
+    Array.from({ length: Math.min(EXPLORE_CONCURRENCY, targets.length) }, async () => {
       for (;;) {
         const i = next++;
-        if (i >= ordered.length) return;
-        const d = ordered[i];
+        if (i >= targets.length) return;
+        const d = targets[i];
         const fqName = `${d.database}.${d.name}`;
         try {
           settled[i] = await exploreTable(client, {
@@ -481,13 +535,11 @@ export async function exploreSchema(client: ClickHouseClient): Promise<SchemaCon
             name: d.name,
             totalRows: d.totalRows,
             sortingKey: d.sortingKey,
-            preferredDateColumn:
-              fqName === priority ? config.dataset.dateColumn : undefined,
-            deep: fqName === priority,
+            deep: deepFor(i),
           });
         } catch (err) {
           console.warn(
-            `exploreSchema: пропускаю ${fqName}: ${err instanceof Error ? err.message : String(err)}`,
+            `exploration: пропускаю ${fqName}: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
       }
@@ -495,9 +547,49 @@ export async function exploreSchema(client: ClickHouseClient): Promise<SchemaCon
   );
   const contexts = settled.filter((c): c is SchemaContext => c !== undefined);
   if (contexts.length === 0) {
-    throw new Error("exploreSchema: не удалось исследовать ни одну обнаруженную таблицу");
+    throw new Error("exploration: не удалось исследовать ни одну таблицу");
   }
-  return sortContexts(contexts);
+  return contexts;
+}
+
+/**
+ * Фаза B exploration: ГЛУБОКАЯ разведка выбранных триажем таблиц (сэмплы,
+ * кардинальности, топ значений, диапазон дат). Неизвестные имена молча
+ * пропускаются (LLM мог ошибиться в имени), порядок triage сохраняется.
+ */
+export async function exploreTables(
+  client: ClickHouseClient,
+  fqNames: string[],
+): Promise<SchemaContext[]> {
+  const discovered = await discoverTables(client);
+  const byName = new Map(discovered.map((d) => [`${d.database}.${d.name}`, d]));
+  const targets = [...new Set(fqNames)]
+    .map((n) => byName.get(n))
+    .filter((d): d is DiscoveredTable => d !== undefined)
+    .slice(0, MAX_DEEP_TABLES);
+  if (targets.length === 0) {
+    throw new Error(
+      `exploreTables: ни одна из запрошенных таблиц не видна agent_ro: ${fqNames.join(", ")}`,
+    );
+  }
+  return runExploration(client, targets, () => true);
+}
+
+/**
+ * Legacy-проход одним вызовом (скрипт explore:schema, Trigger-таска
+ * explore-schema): топ-MAX_TABLES таблиц по размеру, глубоко — только самая
+ * большая. Конвейер investigate этим НЕ пользуется — он идёт через
+ * catalogTables → триаж → exploreTables.
+ */
+export async function exploreSchema(client: ClickHouseClient): Promise<SchemaContext[]> {
+  const discovered = await discoverTables(client);
+  const ordered = discovered.slice(0, MAX_TABLES);
+  if (ordered.length === 0) {
+    throw new Error(
+      "exploreSchema: agent_ro не видит ни одной непустой таблицы данных — проверь гранты (system.tables пуст за вычетом служебных баз)",
+    );
+  }
+  return runExploration(client, ordered, (i) => i === 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -505,27 +597,27 @@ export async function exploreSchema(client: ClickHouseClient): Promise<SchemaCon
 // ---------------------------------------------------------------------------
 
 /**
- * ЕДИНСТВЕННЫЙ «кэш» exploration — короткая мемоизация промиса в памяти
- * процесса: параллельные раны/карточки в одном воркере не гоняют одинаковые
- * запросы к system.* и топ-N. Никакого хранимого состояния (персистентный
- * scratch.schema_context удалён — вся информация и так живёт в ClickHouse),
- * поэтому нет и церемонии инвалидации: новые таблицы/гранты/данные видны не
- * позже, чем через SCHEMA_MEMO_TTL_MS даже на долгоживущем воркере.
+ * ЕДИНСТВЕННЫЙ «кэш» exploration — короткая мемоизация промиса КАТАЛОГА в
+ * памяти процесса: параллельные раны в одном воркере не гоняют одинаковые
+ * запросы к system.*. Никакого хранимого состояния, поэтому нет и церемонии
+ * инвалидации: новые таблицы/гранты видны не позже, чем через
+ * CATALOG_MEMO_TTL_MS даже на долгоживущем воркере. Глубокая разведка не
+ * мемоизируется: она и так идёт только по 1–MAX_DEEP_TABLES выбранным таблицам.
  */
-const SCHEMA_MEMO_TTL_MS = 60_000;
+const CATALOG_MEMO_TTL_MS = 60_000;
 
-let schemaMemo: { promise: Promise<SchemaContext[]>; at: number } | undefined;
+let catalogMemo: { promise: Promise<CatalogTable[]>; at: number } | undefined;
 
-export async function getSchemaContext(client: ClickHouseClient): Promise<SchemaContext[]> {
-  if (!schemaMemo || Date.now() - schemaMemo.at >= SCHEMA_MEMO_TTL_MS) {
-    const promise = exploreSchema(client);
-    schemaMemo = { promise, at: Date.now() };
-    // Неудачное исследование не должно залипать в мемо до конца TTL.
+export async function getCatalog(client: ClickHouseClient): Promise<CatalogTable[]> {
+  if (!catalogMemo || Date.now() - catalogMemo.at >= CATALOG_MEMO_TTL_MS) {
+    const promise = catalogTables(client);
+    catalogMemo = { promise, at: Date.now() };
+    // Неудачный каталог не должен залипать в мемо до конца TTL.
     promise.catch(() => {
-      if (schemaMemo?.promise === promise) schemaMemo = undefined;
+      if (catalogMemo?.promise === promise) catalogMemo = undefined;
     });
   }
-  return schemaMemo.promise;
+  return catalogMemo.promise;
 }
 
 /**

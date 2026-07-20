@@ -1,18 +1,16 @@
 /**
- * ClickContext — что уходит из UI при клике по элементу карточки (J1, заморожено).
+ * ClickContext — что уходит из UI при клике по элементу карточки.
  *
  * Собирается рендерером из ClickTarget (см. view-spec.ts): UI берёт у кликнутого
  * элемента поля, перечисленные в selectionKeys, и кладёт их в `selection` под
- * теми же именами. Дальше два пути:
- *   - action: 'drill' → POST /api/drill { drillId, params: selection } — быстрый
- *     параметризованный SQL мимо LLM;
- *   - action: 'why'   → POST /api/ask { question, context } — новый ран агента,
+ * теми же именами. Путь один (v2, дриллы удалены):
+ *   - action: 'why' → POST /api/ask { question, context } — новый ран агента,
  *     selection становится контекстом промпта.
  */
 import { z } from "zod";
 import { viewKindSchema } from "./view-spec";
 
-export const CLICK_ACTIONS = ["drill", "why"] as const;
+export const CLICK_ACTIONS = ["why"] as const;
 export const clickActionSchema = z.enum(CLICK_ACTIONS);
 export type ClickAction = z.infer<typeof clickActionSchema>;
 

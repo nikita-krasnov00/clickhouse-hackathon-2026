@@ -16,7 +16,12 @@ import { runs } from "@trigger.dev/sdk";
 import { triggerInvestigate } from "../src/lib/trigger-api";
 import type { RunStep } from "../src/lib/contracts";
 
-const QUESTION = process.argv[2] ?? "Накручен ли xai-org/grok-1? Докажи";
+// Нейтральный, заведомо отвечаемый вопрос с ДВУМЯ дополняющими углами (топ +
+// тренд), чтобы триаж спланировал ≥ 2 карточки — иначе проверка ниже
+// (specCount < 2) валится не из-за бага, а из-за того, что «простой лукап»
+// триаж по своим же правилам сводит к одной карточке.
+const QUESTION =
+  process.argv[2] ?? "top repos by stars in March 2024, and how did star activity trend across the month?";
 
 const TERMINAL = new Set([
   "COMPLETED",

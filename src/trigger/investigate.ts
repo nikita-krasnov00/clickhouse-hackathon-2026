@@ -12,14 +12,14 @@ import { investigateCardTask } from "./investigate-card";
 
 /**
  * B3 — durable-таска investigate: вопрос (+ опциональный ClickContext из клика
- * «почему?») → конвейер exploring → generating_sql → planning → карточки →
- * done с ViewSpec[].
+ * «почему?») → конвейер v2: каталог → триаж (clarify/impossible/board_planned)
+ * → глубокая разведка выбранных таблиц → карточки → done с ViewSpec[].
  *
  * Карточки плана исполняются ПАРАЛЛЕЛЬНЫМИ ДОЧЕРНИМИ РАНАМИ investigate-card
  * (batch.triggerByTaskAndWait — настоящий параллелизм на воркерах), а не
- * Promise.all в этом ране. «Мгновенный срез» (runInstantPreview) остаётся в
- * родителе. Прогресс детей виден фронту без изменений контракта: каждый
- * ребёнок пишет свои шаги в metadata ЭТОГО рана через metadata.parent.append.
+ * Promise.all в этом ране; каждый ребёнок сам генерит SQL своей карточки.
+ * Прогресс детей виден фронту без изменений контракта: каждый ребёнок пишет
+ * свои шаги в metadata ЭТОГО рана через metadata.parent.append.
  *
  * Прогресс стримится через metadata (Trigger.dev Realtime):
  *   - metadata.steps — массив всех RunStep рана по порядку (строго runStepSchema);

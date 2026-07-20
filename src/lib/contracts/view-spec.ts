@@ -23,6 +23,7 @@ export const VIEW_KINDS = [
   "verdict",
   "bignumber",
   "scatter",
+  "map",
 ] as const;
 
 export const viewKindSchema = z.enum(VIEW_KINDS);
@@ -39,10 +40,10 @@ export const dateTimeStringSchema = z
 // ---------------------------------------------------------------------------
 // ClickTarget — декларация кликабельности, часть ViewSpec.
 //
-// РЕШЕНИЕ J1 (зафиксировано): ClickTarget описывает, ЧТО в карточке кликабельно
-// и КАК из клика собрать ClickContext.selection. Схема:
+// ClickTarget описывает, ЧТО в карточке кликабельно и КАК из клика собрать
+// ClickContext.selection. Схема:
 //
-//   { on, selectionKeys, drillId?, label? }
+//   { on, selectionKeys, label? }
 //
 //  - `on` — класс элемента, к которому применяется цель:
 //      'point'  → точка серии в timeline или точка scatter
@@ -61,13 +62,11 @@ export const dateTimeStringSchema = z
 //      bucket → 'label', 'count'
 //      cell   → 'x', 'y', 'value'
 //
-//  - `drillId` — если задан, у клика есть быстрый путь без LLM:
-//    POST /api/drill { drillId, params: selection }. Каталог drill-запросов
-//    (трек A, задача A4) объявляет параметры ровно под эти имена ключей.
-//    Если drillId нет — клик может только запустить новый ран агента
-//    (action: 'why') с ClickContext в качестве контекста.
+//  - `label` — подпись действия для тултипа/меню («Разобраться с этой точкой»).
 //
-//  - `label` — подпись действия для тултипа/меню («Кто ставил звёзды в этот день?»).
+// v2: быстрого пути drillId больше нет — любой клик уходит новым раном агента
+// (action: 'why') с ClickContext в качестве контекста. Датасет-специфичный
+// каталог дриллов удалён вместе с /api/drill.
 //
 // Почему у graph и verdict нет clicks: так зафиксирован эскиз PLAN.md.
 // Это не блокирует интерактивность графа: ClickContext не ссылается на
@@ -80,7 +79,6 @@ export const CLICK_TARGET_ELEMENTS = ["point", "row", "bucket", "cell"] as const
 export const clickTargetSchema = z.strictObject({
   on: z.enum(CLICK_TARGET_ELEMENTS),
   selectionKeys: z.array(z.string()).min(1),
-  drillId: z.string().optional(),
   label: z.string().optional(),
 });
 export type ClickTarget = z.infer<typeof clickTargetSchema>;
@@ -165,6 +163,20 @@ export const statSchema = z.strictObject({
   detail: z.string().optional(),
 });
 export type Stat = z.infer<typeof statSchema>;
+
+/**
+ * Точка карты: географические координаты (WGS84, градусы) + опциональные
+ * величина (размер/интенсивность маркера) и имя сущности.
+ */
+export const mapPointSchema = z.strictObject({
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+  /** Величина точки (агрегат: count, сумма…) — кодируется размером/яркостью. */
+  value: z.number().optional(),
+  /** Имя сущности за точкой (район, город) — тултип и selection. */
+  label: z.string().optional(),
+});
+export type MapPoint = z.infer<typeof mapPointSchema>;
 
 // ---------------------------------------------------------------------------
 // Варианты ViewSpec
@@ -262,6 +274,22 @@ export const scatterSpecSchema = z.strictObject({
 });
 export type ScatterSpec = z.infer<typeof scatterSpecSchema>;
 
+/**
+ * Карта: гео-точки {lat, lon} с опциональной величиной. Рендер — самописный
+ * SVG без тайлов и внешних зависимостей: equirect-проекция, вьюпорт по
+ * bounding box точек, градусная сетка. Плотные сырые координаты SQL обязан
+ * агрегировать (round + count), не сливать миллионы строк.
+ */
+export const mapSpecSchema = z.strictObject({
+  kind: z.literal("map"),
+  title: z.string(),
+  points: z.array(mapPointSchema),
+  /** Подпись величины value для легенды («посадки», «выручка»). */
+  valueLabel: z.string().optional(),
+  clicks: z.array(clickTargetSchema),
+});
+export type MapSpec = z.infer<typeof mapSpecSchema>;
+
 // ---------------------------------------------------------------------------
 // Дискриминированное объединение
 // ---------------------------------------------------------------------------
@@ -279,6 +307,7 @@ export const viewSpecSchemaByKind = {
   verdict: verdictSpecSchema,
   bignumber: bigNumberSpecSchema,
   scatter: scatterSpecSchema,
+  map: mapSpecSchema,
 } as const satisfies Record<ViewKind, z.ZodType>;
 
 export const viewSpecSchema = z.discriminatedUnion("kind", [
@@ -290,5 +319,6 @@ export const viewSpecSchema = z.discriminatedUnion("kind", [
   verdictSpecSchema,
   bigNumberSpecSchema,
   scatterSpecSchema,
+  mapSpecSchema,
 ]);
 export type ViewSpec = z.infer<typeof viewSpecSchema>;

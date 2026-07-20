@@ -28,8 +28,6 @@ const emptyAsUndefined = (v: unknown) =>
   typeof v === "string" && v.trim() === "" ? undefined : v;
 
 const optionalVar = z.preprocess(emptyAsUndefined, nonEmpty.optional());
-const varWithDefault = (def: string) =>
-  z.preprocess(emptyAsUndefined, nonEmpty.default(def));
 
 /** ClickHouse Cloud: адрес и два агентских юзера (создаёт трек A, задача A1). */
 const clickhouseEnvSchema = z.object({
@@ -41,16 +39,13 @@ const clickhouseEnvSchema = z.object({
   AGENT_SCRATCH_PASSWORD: nonEmpty,
 });
 
-/** LLM (OpenRouter). Модель опциональна — дефолт и фоллбеки живут в llm.ts. */
+/** LLM (OpenRouter). Модели опциональны — дефолты и фоллбеки живут в llm.ts. */
 const llmEnvSchema = z.object({
   OPENROUTER_API_KEY: nonEmpty,
+  /** Основная модель: text-to-SQL, самопочинка, вердикты. */
   LLM_MODEL: optionalVar,
-});
-
-/** Датасет расследований: целевая таблица и её колонка даты. */
-const datasetEnvSchema = z.object({
-  GITHUB_EVENTS_TABLE: varWithDefault("github.github_events"),
-  GITHUB_EVENTS_DATE_COLUMN: varWithDefault("created_at"),
+  /** Быстрая модель: триаж вопроса, подсказки-пресеты. Пусто — дефолт llm.ts. */
+  LLM_MODEL_FAST: optionalVar,
 });
 
 // ---------------------------------------------------------------------------
@@ -66,14 +61,10 @@ export type ClickHouseConfig = {
 
 export type LlmConfig = {
   apiKey: string;
-  /** Модель из env; undefined — взять дефолтную цепочку llm.ts. */
+  /** Основная модель из env; undefined — взять дефолтную цепочку llm.ts. */
   model: string | undefined;
-};
-
-export type DatasetConfig = {
-  /** Полное имя целевой таблицы (`db.table`). */
-  githubEventsTable: string;
-  dateColumn: string;
+  /** Быстрая модель из env; undefined — дефолт llm.ts (GPT-5.6 Terra). */
+  fastModel: string | undefined;
 };
 
 // ---------------------------------------------------------------------------
@@ -98,7 +89,6 @@ function parseGroup<S extends z.ZodRawShape>(
 
 let clickhouseCache: ClickHouseConfig | undefined;
 let llmCache: LlmConfig | undefined;
-let datasetCache: DatasetConfig | undefined;
 
 export const config = {
   get clickhouse(): ClickHouseConfig {
@@ -124,19 +114,12 @@ export const config = {
   get llm(): LlmConfig {
     if (!llmCache) {
       const env = parseGroup("LLM", llmEnvSchema);
-      llmCache = { apiKey: env.OPENROUTER_API_KEY, model: env.LLM_MODEL };
-    }
-    return llmCache;
-  },
-
-  get dataset(): DatasetConfig {
-    if (!datasetCache) {
-      const env = parseGroup("датасета", datasetEnvSchema);
-      datasetCache = {
-        githubEventsTable: env.GITHUB_EVENTS_TABLE,
-        dateColumn: env.GITHUB_EVENTS_DATE_COLUMN,
+      llmCache = {
+        apiKey: env.OPENROUTER_API_KEY,
+        model: env.LLM_MODEL,
+        fastModel: env.LLM_MODEL_FAST,
       };
     }
-    return datasetCache;
+    return llmCache;
   },
 };

@@ -1,6 +1,10 @@
 # Insight Desk
 
-Чат-агент над `github_events` (ClickHouse) с интерактивными карточками-расследованиями.
+Чат-агент над ClickHouse с интерактивными карточками-расследованиями — dataset-agnostic:
+на каждый вопрос сам находит нужные таблицы в живом каталоге ClickHouse (сейчас на
+инстансе — `github.github_events` и полная TPC-DS), триажит вопрос на быстрой модели,
+рисует скелет дашборда мгновенно и достраивает карточки SQL параллельно. Если данных не
+хватает или вопрос неоднозначен — честно просит уточнить, а не выдумывает ответ.
 Хакатон «Beyond the Wall of Text» · ClickHouse + Trigger.dev. План и декомпозиция — [PLAN.md](./PLAN.md).
 
 ## Dev & Deploy
@@ -77,10 +81,11 @@ API Keys), не dev-ключ из локального `.env`.
 ### Структура
 
 ```
-src/app/            # Next.js App Router: страница рабочего места (лента + композер)
-src/trigger/        # Таски Trigger.dev v4 (hello — смоук; далее explore-schema, investigate)
+src/app/            # Next.js App Router: страница рабочего места (лента + композер), API-роуты /api/ask и /api/suggest
+src/trigger/        # Таски Trigger.dev v4: hello — смоук; investigate — конвейер; investigate-card — дочерний ран одной карточки; explore-schema — разведка вручную
+src/lib/agent/      # Конвейер investigate v2: explore (каталог+разведка) → triage (быстрая модель, env LLM_MODEL_FAST) → generate-sql (LLM_MODEL)
 src/lib/clickhouse.ts   # Фабрики клиентов: readonly (agent_ro) и scratch (agent_scratch)
-src/lib/contracts/  # Zod-контракты ViewSpec/ClickContext — замораживаются на J1
+src/lib/contracts/  # Zod-контракты ViewSpec/ClickContext/RunStep — замораживаются на J1
 scripts/ch-ping.ts  # Смоук ClickHouse: npm run ch:ping
 db/                 # Провижининг ClickHouse (трек A)
 trigger.config.ts   # Конфиг Trigger.dev (project ref, retries, maxDuration)

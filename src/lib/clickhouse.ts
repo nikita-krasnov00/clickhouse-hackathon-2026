@@ -5,16 +5,17 @@ import { config } from "@/lib/config";
  * Фабрики ClickHouse-клиентов (B1).
  *
  * Два юзера с разными правами (создаёт трек A, задача A1):
- *  - `agent_ro`      — read-only: SELECT по github_events. Все запросы агента
- *                      и drill API ходят только под ним.
+ *  - `agent_ro`      — read-only: SELECT по всем базам данных, выданным
+ *                      грантами (github, tpcds, …). Все запросы агента ходят
+ *                      только под ним; гранты = скоуп агента.
  *  - `agent_scratch` — запись в базу `scratch`: temp tables с TTL,
- *                      кэш схемы (B2, B6), операционный лог LLM.
+ *                      операционный лог LLM.
  *
  * Значения — из конфигурации проекта (src/lib/config.ts, источник .env):
  * URL и креды валидируются лениво при первом создании клиента.
  */
 
-/** Read-only клиент (agent_ro) — SQL агента и drill-запросы. */
+/** Read-only клиент (agent_ro) — все SQL-запросы агента. */
 export function createReadonlyClient(): ClickHouseClient {
   const { url, readonly } = config.clickhouse;
   return createClient({

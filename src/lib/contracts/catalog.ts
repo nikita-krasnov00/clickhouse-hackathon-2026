@@ -5,9 +5,10 @@
  * прогоняются через схемы в contracts:smoke — каталог не может разъехаться
  * с контрактом.
  *
+ * Примеры НАРОЧНО нейтральные (заказы/выручка/сегменты): движок
+ * dataset-agnostic, домен приходит из живого schema context, а не из каталога.
  * Описания — на английском (уходят в промпт LLM), заголовки примеров — на
- * русском (язык демо; в промпте B4 стоит попросить писать title на языке
- * вопроса пользователя).
+ * русском (язык демо; промпт просит писать title на языке вопроса).
  */
 import type { ViewKind, ViewSpec } from "./view-spec";
 
@@ -37,14 +38,14 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
       "series: 1+ named series of points {t: ISO date/datetime string, v: number}. anomalyWindow: optional [fromISO, toISO]. clicks: targets with on:'point', selectable fields 't', 'v', 'series'.",
     example: {
       kind: "timeline",
-      title: "Звёзды по дням: acme/turbo-widget",
+      title: "Заказы по дням",
       series: [
         {
-          name: "acme/turbo-widget",
+          name: "заказы",
           points: [
-            { t: "2024-03-01", v: 12 },
+            { t: "2024-03-01", v: 120 },
             { t: "2024-03-02", v: 842 },
-            { t: "2024-03-03", v: 31 },
+            { t: "2024-03-03", v: 131 },
           ],
         },
       ],
@@ -53,8 +54,7 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
         {
           on: "point",
           selectionKeys: ["t", "series"],
-          drillId: "stars-by-day",
-          label: "Кто ставил звёзды в этот день?",
+          label: "Разобраться с этим моментом",
         },
       ],
     },
@@ -63,27 +63,26 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
     kind: "leaderboard",
     summary: "Ranked table of entities with a few metric columns.",
     whenToUse:
-      "The question is 'which/top N': repos by star burst, accounts by activity, orgs by events. Best entry point of an investigation — rows are clickable.",
+      "The question is 'which/top N': entities ranked by a metric. Best entry point of an investigation — rows are clickable.",
     dataShape:
       "columns: [{key, label}] define the table; rows: records keyed by column key, values string|number|null (null renders as a dash). clicks: targets with on:'row', selectionKeys are column keys.",
     example: {
       kind: "leaderboard",
-      title: "Репозитории с аномальным всплеском звёзд",
+      title: "Категории с аномальным всплеском продаж",
       columns: [
-        { key: "repo", label: "Репозиторий" },
-        { key: "stars_day", label: "Звёзд за день" },
+        { key: "category", label: "Категория" },
+        { key: "sales_day", label: "Продаж за день" },
         { key: "burst_ratio", label: "Всплеск, ×медиана" },
       ],
       rows: [
-        { repo: "acme/turbo-widget", stars_day: 842, burst_ratio: 70.2 },
-        { repo: "dev0/ai-magic", stars_day: 415, burst_ratio: 41.5 },
+        { category: "Электроника", sales_day: 842, burst_ratio: 7.2 },
+        { category: "Игрушки", sales_day: 415, burst_ratio: 4.5 },
       ],
       clicks: [
         {
           on: "row",
-          selectionKeys: ["repo"],
-          drillId: "repo-star-timeline",
-          label: "Таймлайн звёзд репозитория",
+          selectionKeys: ["category"],
+          label: "Разобраться с этой строкой",
         },
       ],
     },
@@ -92,25 +91,24 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
     kind: "histogram",
     summary: "Distribution of a value across labelled buckets.",
     whenToUse:
-      "The question is about how a value is distributed: account age at star time, events per account, stars per hour. Great for showing 'too many brand-new accounts'.",
+      "The question is about how a value is distributed: order size buckets, entity age, events per entity. Great for showing 'the mass is concentrated in one bucket'.",
     dataShape:
       "bucketLabel: axis name for the buckets; buckets: [{label, count}] in display order. clicks: targets with on:'bucket', selectable fields 'label', 'count'.",
     example: {
       kind: "histogram",
-      title: "Возраст аккаунтов, ставивших звёзды 2 марта",
-      bucketLabel: "Возраст аккаунта",
+      title: "Распределение чеков по размеру",
+      bucketLabel: "Размер чека",
       buckets: [
-        { label: "< 7 дней", count: 611 },
-        { label: "7–30 дней", count: 128 },
-        { label: "1–6 мес", count: 54 },
-        { label: "> 6 мес", count: 49 },
+        { label: "< 10", count: 611 },
+        { label: "10–100", count: 128 },
+        { label: "100–1000", count: 54 },
+        { label: "> 1000", count: 9 },
       ],
       clicks: [
         {
           on: "bucket",
           selectionKeys: ["label"],
-          drillId: "accounts-by-age-bucket",
-          label: "Аккаунты из этой корзины",
+          label: "Что попало в эту корзину?",
         },
       ],
     },
@@ -119,21 +117,21 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
     kind: "graph",
     summary: "Network of related entities (nodes + weighted edges).",
     whenToUse:
-      "The question is about relationships or clusters: accounts co-starring the same repos, orgs sharing contributors. Cap the output: keep only the top-scoring nodes and set maxNodes accordingly (50 is a good default).",
+      "The question is about relationships or clusters between entities. Cap the output: keep only the top-scoring nodes and set maxNodes accordingly (50 is a good default).",
     dataShape:
-      "nodes: [{id, label, score? (suspicion 0..1), size?}]; edges: [{source, target, weight?}] referencing node ids; maxNodes: hard cap, required. No clicks field.",
+      "nodes: [{id, label, score? (anomaly 0..1), size?}]; edges: [{source, target, weight?}] referencing node ids; maxNodes: hard cap, required. No clicks field.",
     example: {
       kind: "graph",
-      title: "Ко-старинг: кластер аккаунтов вокруг acme/turbo-widget",
+      title: "Кластер связанных сущностей",
       nodes: [
-        { id: "repo:acme/turbo-widget", label: "acme/turbo-widget", size: 24 },
-        { id: "user:star-bot-101", label: "star-bot-101", score: 0.97, size: 14 },
-        { id: "user:star-bot-102", label: "star-bot-102", score: 0.93, size: 12 },
+        { id: "hub:alpha", label: "alpha", size: 24 },
+        { id: "node:beta", label: "beta", score: 0.97, size: 14 },
+        { id: "node:gamma", label: "gamma", score: 0.93, size: 12 },
       ],
       edges: [
-        { source: "user:star-bot-101", target: "repo:acme/turbo-widget", weight: 1 },
-        { source: "user:star-bot-102", target: "repo:acme/turbo-widget", weight: 1 },
-        { source: "user:star-bot-101", target: "user:star-bot-102", weight: 5 },
+        { source: "node:beta", target: "hub:alpha", weight: 1 },
+        { source: "node:gamma", target: "hub:alpha", weight: 1 },
+        { source: "node:beta", target: "node:gamma", weight: 5 },
       ],
       maxNodes: 50,
     },
@@ -142,12 +140,12 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
     kind: "heatmap",
     summary: "Intensity matrix over two categorical/time axes.",
     whenToUse:
-      "The question is about a pattern across two dimensions: hour-of-day × day-of-week activity, repo × day star matrix. Great for showing machine-like regularity.",
+      "The question is about a pattern across two dimensions: hour-of-day × day-of-week activity, category × day matrix. Great for showing machine-like regularity.",
     dataShape:
       "xLabels/yLabels: axis values in display order; cells: [{x, y, value}] where x ∈ xLabels, y ∈ yLabels; sparse cells allowed (missing = 0). clicks: targets with on:'cell', selectable fields 'x', 'y', 'value'.",
     example: {
       kind: "heatmap",
-      title: "Звёзды acme/turbo-widget: час × день недели",
+      title: "Активность: час × день недели",
       xLabels: ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"],
       yLabels: ["00–06", "06–12", "12–18", "18–24"],
       cells: [
@@ -159,8 +157,7 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
         {
           on: "cell",
           selectionKeys: ["x", "y"],
-          drillId: "stars-by-hour-slot",
-          label: "События в этом слоте",
+          label: "Разобраться с этим слотом",
         },
       ],
     },
@@ -169,18 +166,18 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
     kind: "verdict",
     summary: "Final conclusion card: verdict sentence, confidence, evidence stats.",
     whenToUse:
-      "The investigation has reached a conclusion and you can back it with numbers. Use as the last card of a run; keep the verdict to one or two sentences, put numbers into evidence.",
+      "The investigation has reached a conclusion and you can back it with numbers. Use as the last card of a run; keep the verdict to one or two sentences, put numbers into evidence. Also the honest way to say the data cannot answer the question.",
     dataShape:
       "verdict: the conclusion; confidence: 'low'|'medium'|'high'; evidence: [{label, value: string|number, detail?}] — 2–5 hard stats supporting the verdict.",
     example: {
       kind: "verdict",
       verdict:
-        "Всплеск звёзд acme/turbo-widget 2 марта — накрутка: 84% звёзд поставили аккаунты моложе недели, действующие синхронным кластером.",
+        "Всплеск продаж 2 марта аномален: ×70 к медиане, 84% заказов пришли из одного сегмента за два часа.",
       confidence: "high",
       evidence: [
-        { label: "Всплеск", value: "×70", detail: "842 звезды за день против медианы 12" },
-        { label: "Молодые аккаунты", value: "84%", detail: "моложе 7 дней на момент звезды" },
-        { label: "Кластер ко-старинга", value: 57, detail: "аккаунтов звездят одни и те же 3 репозитория" },
+        { label: "Всплеск", value: "×70", detail: "842 заказа за день против медианы 12" },
+        { label: "Концентрация", value: "84%", detail: "доля одного сегмента в пике" },
+        { label: "Окно", value: "2 часа", detail: "почти все события — в узком интервале" },
       ],
     },
   },
@@ -188,16 +185,42 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
     kind: "bignumber",
     summary: "Single large KPI: one value with a label, optional % delta and detail caption.",
     whenToUse:
-      "The answer is ONE number: total stars of a repo, share of bot accounts, count of suspicious repos. Prefer it over a one-row leaderboard. Add delta only when there is a meaningful baseline to compare against (previous period, median).",
+      "The answer is ONE number: a total, a share, a count. Prefer it over a one-row leaderboard. Add delta only when there is a meaningful baseline to compare against (previous period, median).",
     dataShape:
       "value: number or pre-formatted string ('84%', '×70'); label: what the number means; delta: optional number, % change vs baseline (positive renders green, negative red); detail: optional secondary caption. No clicks field.",
     example: {
       kind: "bignumber",
-      title: "Звёзды acme/turbo-widget за 14 дней",
-      value: 1803,
-      label: "звёзд за последние 14 дней",
-      delta: 412.5,
-      detail: "против медианы 87 звёзд в неделю",
+      title: "Выручка за 14 дней",
+      value: 180300,
+      label: "выручка за последние 14 дней",
+      delta: 41.5,
+      detail: "против медианы 127 400 в предыдущие периоды",
+    },
+  },
+  map: {
+    kind: "map",
+    summary:
+      "Geographic scatter: points {lat, lon} on an auto-fitted map pane, with optional per-point value (marker size/intensity) and label.",
+    whenToUse:
+      "The question is about WHERE something happens: spatial density, hotspots, geographic spread. ONLY when the data really carries coordinate columns (latitude/longitude in degrees) — never geocode names yourself. Aggregate dense raw coordinates in SQL (round to 2–3 decimals + count()/sum()) instead of returning raw event rows.",
+    dataShape:
+      "points: [{lat: -90..90, lon: -180..180, value?: number (aggregated weight → marker size/intensity), label?: string (entity name)}], ≤ 1000 points; valueLabel: what value means (legend). clicks: targets with on:'point', selectable fields 'lat', 'lon', 'value', 'label'.",
+    example: {
+      kind: "map",
+      title: "Плотность заказов по районам города",
+      valueLabel: "заказы",
+      points: [
+        { lat: 40.758, lon: -73.9855, value: 412, label: "Midtown" },
+        { lat: 40.7128, lon: -74.006, value: 260, label: "Downtown" },
+        { lat: 40.6413, lon: -73.7781, value: 88, label: "Airport" },
+      ],
+      clicks: [
+        {
+          on: "point",
+          selectionKeys: ["label", "lat", "lon"],
+          label: "Разобраться с этой точкой",
+        },
+      ],
     },
   },
   scatter: {
@@ -205,26 +228,26 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
     summary:
       "Scatter plot: entities as points on two numeric axes; the card draws a trend line and Pearson r itself.",
     whenToUse:
-      "The question is about a relationship/dependency between two numeric properties of many entities: stars vs commits, account age vs stars given, events per account vs repos starred. The trend line + r answer «is there a relationship?» directly. Bot farms show up as tight visual clusters. Keep at most 500 points.",
+      "The question is about a relationship/dependency between two numeric properties of many entities: price vs volume, size vs frequency. The trend line + r answer «is there a relationship?» directly. Tight clusters expose anomalous groups. Keep at most 500 points.",
     dataShape:
-      "points: [{x: number, y: number, label?: string (entity name)}], ≤ 500 points, RAW numbers (never log-transform in SQL). xLabel/yLabel: plain quantity names. xScale/yScale: 'log' when a quantity spans orders of magnitude (stars, commits) — the card log-scales the axis and labels ticks with real values. clicks: targets with on:'point', selectable fields 'x', 'y', 'label'.",
+      "points: [{x: number, y: number, label?: string (entity name)}], ≤ 500 points, RAW numbers (never log-transform in SQL). xLabel/yLabel: plain quantity names. xScale/yScale: 'log' when a quantity spans orders of magnitude — the card log-scales the axis and labels ticks with real values. clicks: targets with on:'point', selectable fields 'x', 'y', 'label'.",
     example: {
       kind: "scatter",
-      title: "Звёзды vs коммиты: есть ли связь?",
+      title: "Цена vs объём продаж: есть ли связь?",
       points: [
-        { x: 46475, y: 812, label: "xai-org/grok-1" },
-        { x: 5300, y: 240, label: "acme/turbo-widget" },
-        { x: 120, y: 15, label: "solo-dev/side-project" },
+        { x: 46475, y: 812, label: "SKU-1042" },
+        { x: 5300, y: 240, label: "SKU-0077" },
+        { x: 120, y: 15, label: "SKU-0009" },
       ],
-      xLabel: "Звёзды",
-      yLabel: "Коммиты (PushEvent)",
+      xLabel: "Цена",
+      yLabel: "Продажи",
       xScale: "log",
       yScale: "log",
       clicks: [
         {
           on: "point",
           selectionKeys: ["label"],
-          label: "Что это за репозиторий?",
+          label: "Разобраться с этой точкой",
         },
       ],
     },

@@ -12,13 +12,12 @@
     "explore:schema": "tsx --env-file=.env scripts/explore-schema.ts",
     "investigate:smoke": "tsx --env-file=.env scripts/investigate-smoke.ts",
     "heal:smoke": "tsx --env-file=.env scripts/heal-smoke.ts",
-    "drill:smoke": "tsx --env-file=.env scripts/drill-smoke.ts",
     "llm:log": "tsx --env-file=.env scripts/llm-log-tail.ts"
   },
   "dependencies": {
     "@clickhouse/client": "^1.23.1",
-    "@trigger.dev/react-hooks": "^4.5.4",
-    "@trigger.dev/sdk": "4.5.4",
+    "@trigger.dev/react-hooks": "4.5.5",
+    "@trigger.dev/sdk": "4.5.5",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4",

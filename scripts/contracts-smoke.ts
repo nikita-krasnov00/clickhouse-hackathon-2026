@@ -3,14 +3,13 @@
  * По каждому виду ViewSpec: валидный пример (из VIEW_SPEC_CATALOG — заодно
  * проверяем, что каталог не разъехался со схемами) парсится, невалидный —
  * отклоняется. Плюс строгость (лишний ключ — ошибка) и точечные проверки
- * ClickContext / Drill / Ask / RunStep.
+ * ClickContext / Ask / RunStep (v2: дрилл-контракты удалены).
  */
 import {
   VIEW_KINDS,
   VIEW_SPEC_CATALOG,
   askRequestSchema,
   clickContextSchema,
-  drillRequestSchema,
   runStepSchema,
   viewSpecSchema,
 } from "../src/lib/contracts";
@@ -104,6 +103,14 @@ expectInvalid("scatter: нет xLabel", {
   yLabel: "y",
   clicks: [],
 });
+expectInvalid("map: широта вне диапазона (100°)", {
+  ...valid.map.example,
+  points: [{ lat: 100, lon: 30, value: 1 }],
+});
+expectInvalid("map: точка без lon", {
+  ...valid.map.example,
+  points: [{ lat: 40.7 }],
+});
 expectInvalid("неизвестный kind", { kind: "piechart", title: "t" });
 expectInvalid("строгость: лишний ключ на верхнем уровне", {
   ...valid.verdict.example,
@@ -116,45 +123,34 @@ expectInvalid("строгость: лишний ключ в ClickTarget", {
 
 // --- ClickContext / API / RunStep -------------------------------------------
 
-console.log("ClickContext, Drill/Ask API, RunStep:");
+console.log("ClickContext, Ask API, RunStep:");
 
 check(
-  "ClickContext: валидный drill-клик",
+  "ClickContext: валидный why-клик",
   clickContextSchema.safeParse({
     cardId: "card-1",
     componentKind: "leaderboard",
-    selection: { repo: "acme/turbo-widget", stars_day: 842 },
-    action: "drill",
+    selection: { category: "Электроника", sales_day: 842 },
+    action: "why",
   }).success,
 );
 check(
-  "ClickContext: action вне enum отклонён",
+  "ClickContext: action 'drill' удалён из контракта — отклонён",
   !clickContextSchema.safeParse({
     cardId: "card-1",
     componentKind: "leaderboard",
     selection: {},
-    action: "zoom",
+    action: "drill",
   }).success,
-);
-check(
-  "DrillRequest: валидный",
-  drillRequestSchema.safeParse({
-    drillId: "stars-by-day",
-    params: { series: "acme/turbo-widget", t: "2024-03-02" },
-  }).success,
-);
-check(
-  "DrillRequest: null в params отклонён",
-  !drillRequestSchema.safeParse({ drillId: "x", params: { repo: null } }).success,
 );
 check(
   "AskRequest: вопрос с контекстом клика",
   askRequestSchema.safeParse({
-    question: "Почему всплеск звёзд 2 марта?",
+    question: "Почему всплеск продаж 2 марта?",
     context: {
       cardId: "card-1",
       componentKind: "timeline",
-      selection: { t: "2024-03-02", series: "acme/turbo-widget" },
+      selection: { t: "2024-03-02", series: "заказы" },
       action: "why",
     },
   }).success,
@@ -169,6 +165,49 @@ check(
     step: "healing",
     attempt: 2,
     error: "Code: 47. Unknown identifier: star_count",
+  }).success,
+);
+check(
+  "RunStep: board_planned несёт манифест карточек",
+  runStepSchema.safeParse({
+    step: "board_planned",
+    cards: [{ cardId: "card-1", kind: "timeline", title: "Заказы по дням" }],
+  }).success,
+);
+check(
+  "RunStep: board_planned с пустым манифестом отклонён",
+  !runStepSchema.safeParse({ step: "board_planned", cards: [] }).success,
+);
+check(
+  "RunStep: clarify несёт вопрос и варианты",
+  runStepSchema.safeParse({
+    step: "clarify",
+    question: "За какой период считать?",
+    options: ["за месяц", "за год"],
+  }).success,
+);
+check(
+  "RunStep: impossible несёт причину",
+  runStepSchema.safeParse({
+    step: "impossible",
+    reason: "В данных нет сигнала о ценах",
+    available: ["события по дням", "топ сущностей"],
+  }).success,
+);
+check(
+  "RunStep: card_ready с cardId скелета",
+  runStepSchema.safeParse({
+    step: "card_ready",
+    cardId: "card-1",
+    viewSpec: valid.timeline.example,
+  }).success,
+);
+check(
+  "RunStep: card_failed несёт ошибку",
+  runStepSchema.safeParse({
+    step: "card_failed",
+    cardId: "card-2",
+    error: "SQL не удался после 3 попыток",
   }).success,
 );
 check(

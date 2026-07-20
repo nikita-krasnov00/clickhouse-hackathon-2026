@@ -5,11 +5,12 @@
  *   1) юнит-прогон healSql() напрямую: искусственно битый SQL (несуществующая
  *      колонка) → реальная ошибка ClickHouse → модель возвращает исправленный
  *      SQL → исправленный SQL успешно исполняется;
- *   2) конвейер целиком через тест-шов generateSqlImpl: первая генерация
- *      намеренно битая — в логе видно executing → healing → executing → done.
+ *   2) конвейер целиком через тест-швы triageImpl + cardSqlImpl: первая
+ *      генерация намеренно битая — в логе видно executing → healing →
+ *      executing → card_ready → done.
  */
 import { createReadonlyClient } from "../src/lib/clickhouse";
-import { getSchemaContext } from "../src/lib/agent/explore";
+import { exploreSchema } from "../src/lib/agent/explore";
 import { healSql, sanitizeSql, type GeneratedSql } from "../src/lib/agent/generate-sql";
 import { runInvestigatePipeline } from "../src/lib/agent/pipeline";
 import type { RunStep } from "../src/lib/contracts";
@@ -47,7 +48,7 @@ async function main() {
   try {
     // -- Часть 1: healSql напрямую ------------------------------------------
     console.log("=== Часть 1: healSql() напрямую с битым SQL");
-    const schemaContext = await getSchemaContext(ro);
+    const schemaContext = await exploreSchema(ro);
 
     let chError = "";
     try {
@@ -61,6 +62,7 @@ async function main() {
     const healed = await healSql({
       question: QUESTION,
       schemaContext,
+      card: { kind: BROKEN.kind, title: BROKEN.title },
       previous: BROKEN,
       error: chError,
       attempt: 1,
@@ -78,10 +80,20 @@ async function main() {
     console.log(`  исправленный SQL исполнился: ${rows.length} строк, первая: ${JSON.stringify(rows[0])}`);
 
     // -- Часть 2: конвейер с намеренно битой первой генерацией ---------------
-    console.log("\n=== Часть 2: конвейер, первая генерация битая (шов generateSqlImpl)");
+    console.log("\n=== Часть 2: конвейер, первая генерация битая (швы triageImpl+cardSqlImpl)");
     const result = await runInvestigatePipeline(
       { question: QUESTION },
-      { emit: printStep, generateSqlImpl: async () => BROKEN },
+      {
+        emit: printStep,
+        // Триаж навязан: одна leaderboard-карточка по таблице битого SQL.
+        triageImpl: async () => ({
+          decision: "proceed",
+          tables: ["github.github_events"],
+          cards: [{ cardId: "card-1", kind: BROKEN.kind, title: BROKEN.title }],
+        }),
+        // Первая генерация — битый SQL; починку делает настоящая healSql.
+        cardSqlImpl: async () => BROKEN,
+      },
     );
     if (result.attempts < 2) {
       throw new Error("ожидалась минимум одна починка, а конвейер прошёл с первой попытки");

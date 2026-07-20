@@ -2,23 +2,25 @@ import { logger, metadata, schemaTask } from "@trigger.dev/sdk";
 import { z } from "zod";
 import { createReadonlyClient } from "@/lib/clickhouse";
 import { runStepSchema, clickContextSchema, type RunStep } from "@/lib/contracts";
-import { plannedCardSchema } from "@/lib/agent/generate-sql";
+import { triageCardSchema } from "@/lib/agent/triage";
 import { cardTitle, runPlannedCard } from "@/lib/agent/pipeline";
 
 /**
- * Дочерняя таска investigate-card: исполняет ОДНУ карточку плана (sql или
- * drill) на своём воркере. Родитель (src/trigger/investigate.ts) запускает
- * такие раны пачкой через batch.triggerByTaskAndWait — настоящий параллелизм
- * вместо Promise.all внутри одного рана.
+ * Дочерняя таска investigate-card: исполняет ОДНУ карточку плана триажа на
+ * своём воркере — сама генерит SQL под назначенный kind/title/hint, исполняет
+ * и чинит его. Родитель (src/trigger/investigate.ts) запускает такие раны
+ * пачкой через batch.triggerByTaskAndWait — настоящий параллелизм вместо
+ * Promise.all внутри одного рана.
  *
  * Прогресс: фронт подписан ТОЛЬКО на metadata родителя, поэтому каждый шаг
- * (executing → healing → card_ready) уходит через metadata.parent.append —
- * канонический способ SDK v4 писать в metadata родительского рана. Дублируем
- * шаги и в собственную metadata — удобно смотреть ран ребёнка в дашборде.
+ * (generating_sql → executing → healing → card_ready|card_failed) уходит через
+ * metadata.parent.append — канонический способ SDK v4 писать в metadata
+ * родительского рана. Дублируем шаги и в собственную metadata — удобно
+ * смотреть ран ребёнка в дашборде.
  *
  * Выход — всегда CardOutcome-совместимый объект: неудача карточки = ok:false,
- * НЕ исключение (ретраев нет, самопочинка SQL уже внутри runSqlCard). Родитель
- * при этом не падает: он собирает исходы и решает, что показать.
+ * НЕ исключение (ретраев нет, самопочинка SQL уже внутри runPlannedCard).
+ * Родитель при этом не падает: он собирает исходы и решает, что показать.
  */
 
 /** Zod-копия SchemaContext (src/lib/agent/explore.ts) для валидации payload. */
@@ -42,7 +44,7 @@ const schemaContextSchema = z.object({
 });
 
 export const investigateCardPayloadSchema = z.object({
-  card: plannedCardSchema,
+  card: triageCardSchema,
   question: z.string().min(1),
   clickContext: clickContextSchema.optional(),
   schemaContext: z.array(schemaContextSchema).min(1),
@@ -60,7 +62,8 @@ export const investigateCardTask = schemaTask({
   run: async (payload) => {
     const label = payload.label ?? cardTitle(payload.card);
     logger.info("investigate-card: старт", {
-      tool: payload.card.tool,
+      cardId: payload.card.cardId,
+      kind: payload.card.kind,
       label,
     });
 

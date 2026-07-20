@@ -1,23 +1,20 @@
 /**
- * B3/B4/B5 — конвейер investigate, отвязанный от Trigger-рантайма.
+ * Конвейер investigate v2 — dataset-agnostic, отвязан от Trigger-рантайма.
  *
  * Шаги (RunStep из контрактов, строгая валидация перед каждым эмитом):
- *   exploring      → живое исследование схемы из ClickHouse (system.tables/
- *                    columns + статистика; см. getSchemaContext в explore.ts);
- *   generating_sql → generateSql() — LLM-планировщик дашборда (B4): 1–3
- *                    карточки, каждая — свой SQL либо готовый дрилл A4;
- *   planning       → план готов, список карточек уходит в ленту прогресса;
- *   card_ready     → карточки исполняются ПАРАЛЛЕЛЬНО и эмитятся по мере
- *                    готовности — UI рендерит их, не дожидаясь конца рана.
- *                    Исполнитель карточек — шов cardRunner: по умолчанию
- *                    Promise.all в этом процессе (runCardsInProcess), в
- *                    Trigger-ране — параллельные дочерние раны investigate-card.
- *                    Плюс «мгновенный срез»: если вопрос называет репозиторий,
- *                    первая timeline-карточка строится дриллом по роллапам ещё
- *                    до ответа LLM;
- *   executing      → санитайз (только SELECT) + SQL под agent_ro, JSONEachRow;
- *   healing        → до 3 попыток на sql-карточку; ошибка ClickHouse/валидации
- *                    уходит модели контекстом, healSql() чинит SQL (B5);
+ *   exploring      → фаза A: дешёвый каталог ВСЕХ видимых таблиц (explore.ts);
+ *   generating_sql → триаж на быстрой модели (triage.ts): решение
+ *                    proceed/clarify/impossible, выбор таблиц и карточек;
+ *   clarify        → агенту нужно уточнение: вопрос+варианты уходят в UI,
+ *                    ран завершается пустым done (ответ придёт новым /api/ask);
+ *   impossible     → по данным ответить нельзя: причина + что данные МОГУТ;
+ *   board_planned  → манифест карточек [{cardId, kind, title}] — UI рисует
+ *                    СКЕЛЕТЫ дашборда сразу, до всякого SQL (быстрое превью);
+ *   exploring      → фаза B: глубокая разведка ТОЛЬКО выбранных таблиц;
+ *   card_ready /   → карточки исполняются ПАРАЛЛЕЛЬНО (шов cardRunner: дефолт
+ *   card_failed      Promise.all в процессе, в Trigger-ране — дочерние раны
+ *                    investigate-card); каждая карточка сама генерит свой SQL
+ *                    (executing → healing до 3 попыток → card_ready|card_failed);
  *   done           → все успешные ViewSpec (проверены viewSpecSchema.parse);
  *   error          → терминальная неудача: НИ ОДНА карточка плана не удалась.
  *
@@ -34,20 +31,20 @@ import {
   type RunStep,
   type ViewSpec,
 } from "@/lib/contracts";
-import { resolveDrill } from "@/lib/drills";
+import { exploreTables, getCatalog, type SchemaContext } from "./explore";
 import {
-  getSchemaContext,
-  type SchemaContext,
-} from "./explore";
+  triageQuestion,
+  type TriageCard,
+  type TriageInput,
+  type TriageResult,
+} from "./triage";
 import {
-  generateSql,
+  generateCardSql,
   healSql,
   sanitizeSql,
   summarizeVerdict,
-  type GeneratedPlan,
+  type GenerateCardSqlInput,
   type GeneratedSql,
-  type GenerateSqlInput,
-  type PlannedCard,
   type VerdictSummary,
 } from "./generate-sql";
 
@@ -57,11 +54,14 @@ export type PipelineOptions = {
   emit: StepEmitter;
   /** Инъекция клиента для тестов; по умолчанию создаётся и закрывается внутри. */
   readonlyClient?: ClickHouseClient;
+  /** Тест-шов: подмена триажа (смоуки навязывают план без быстрой модели). */
+  triageImpl?: (input: TriageInput) => Promise<TriageResult>;
   /**
-   * Тест-шов: подмена генерации (heal-smoke подсовывает битый SQL). Принимает
-   * и легаси-форму одной sql-карточки — она заворачивается в план из 1 карточки.
+   * Тест-шов: подмена per-card генерации SQL (heal-smoke подсовывает битый
+   * SQL). Работает только для in-process исполнения карточек: в дочерние
+   * Trigger-раны функцию не сериализовать.
    */
-  generateSqlImpl?: (input: GenerateSqlInput) => Promise<GeneratedSql | GeneratedPlan>;
+  cardSqlImpl?: (input: GenerateCardSqlInput) => Promise<GeneratedSql>;
   /**
    * Шов исполнения карточек плана. Дефолт — runCardsInProcess (Promise.all в
    * текущем процессе): его используют смоук-скрипты, он же фоллбек. Trigger-таска
@@ -73,7 +73,7 @@ export type PipelineOptions = {
 
 export type PipelineResult = {
   viewSpecs: ViewSpec[];
-  /** Финальные SQL успешных sql-карточек (с заголовками-комментариями). */
+  /** Финальные SQL успешных карточек (с заголовками-комментариями). */
   sql: string;
   /** Суммарные попытки исполнения по всем карточкам. */
   attempts: number;
@@ -87,9 +87,6 @@ export const MAX_SQL_ATTEMPTS = 3;
 // ---------------------------------------------------------------------------
 
 type ResultRow = Record<string, unknown>;
-
-/** owner/name — признак, что строка выглядит как имя репозитория. */
-const REPO_NAME_RE = /^[^\s/]+\/[^\s/]+$/;
 
 async function executeSql(client: ClickHouseClient, sql: string): Promise<ResultRow[]> {
   const rs = await client.query({
@@ -136,21 +133,17 @@ function requireColumns(row: ResultRow, kind: string, columns: string[]): void {
  * Строит ViewSpec выбранного вида из строк результата. Конвенции формы данных —
  * см. generate-sql.ts. Валидацию viewSpecSchema.parse делает вызывающий.
  *
- * Клик-цели: разумные ClickTarget без drillId (каталог drill-запросов появится
- * в A4) — до тех пор клик может только запустить новый ран агента (action 'why').
+ * Клик-цели generic: у любого клика один путь — новый ран агента (action
+ * 'why') с ClickContext; подписи нейтральные, датасет-специфичных дриллов нет.
  */
 function buildViewSpec(
   generated: GeneratedSql,
   rows: ResultRow[],
   verdictSummary?: VerdictSummary,
-  question?: string,
 ): unknown {
   if (rows.length === 0) {
     throw new Error("SQL вернул 0 строк — карточку не из чего собрать");
   }
-  // Репо из текста вопроса: если серия одна и без имени, называем её репо —
-  // тогда клик по точке получает drillId (drill резолвит repo из series).
-  const questionRepo = question?.match(/[\w.-]+\/[\w.-]+/)?.[0];
   switch (generated.kind) {
     case "timeline": {
       // Опциональная колонка `series` разводит точки по нескольким линиям.
@@ -160,22 +153,16 @@ function buildViewSpec(
         const name =
           "series" in row && row.series != null && row.series !== ""
             ? String(row.series)
-            : (questionRepo ?? generated.title);
+            : generated.title;
         const points = bySeries.get(name) ?? [];
         points.push({ t: String(row.t), v: Number(row.v) });
         bySeries.set(name, points);
       }
-      // A4/C6: если имена серий — репозитории, точка дриллится в «акторы дня»
-      // (drill резолвит repo из selection.series); иначе остаётся путь «почему?».
-      const seriesAreRepos = [...bySeries.keys()].every((n) => REPO_NAME_RE.test(n));
       const clicks: ClickTarget[] = [
         {
           on: "point",
           selectionKeys: ["t", "series"],
-          ...(seriesAreRepos ? { drillId: "actors-of-day" } : {}),
-          label: seriesAreRepos
-            ? "Кто ставил звёзды в этот день?"
-            : "Почему всплеск в этот момент?",
+          label: "Разобраться с этим моментом",
         },
       ];
       return {
@@ -188,22 +175,14 @@ function buildViewSpec(
     }
     case "leaderboard": {
       const keys = Object.keys(rows[0]);
-      // Первая колонка — сущность (конвенция generate-sql.ts). A4/C6: колонка
-      // репозитория дриллится в таймлайн звёзд; иначе клик идёт в «почему?».
-      const repoKey = keys.find((k) => k === "repo" || k === "repo_name");
+      // Первая колонка — сущность (конвенция generate-sql.ts); клик по строке
+      // уносит её значение контекстом в новый ран агента.
       const clicks: ClickTarget[] = [
-        repoKey
-          ? {
-              on: "row",
-              selectionKeys: [repoKey],
-              drillId: "stars-by-day",
-              label: "Таймлайн звёзд этого репо",
-            }
-          : {
-              on: "row",
-              selectionKeys: [keys[0]],
-              label: "Разобраться, что здесь происходит",
-            },
+        {
+          on: "row",
+          selectionKeys: [keys[0]],
+          label: "Разобраться с этой строкой",
+        },
       ];
       return {
         kind: "leaderboard",
@@ -224,7 +203,7 @@ function buildViewSpec(
         {
           on: "bucket",
           selectionKeys: ["label"],
-          label: "Кто попал в эту корзину?",
+          label: "Что попало в эту корзину?",
         },
       ];
       return {
@@ -250,7 +229,7 @@ function buildViewSpec(
         {
           on: "cell",
           selectionKeys: ["x", "y"],
-          label: "События в этом слоте",
+          label: "Разобраться с этим слотом",
         },
       ];
       return {
@@ -329,7 +308,6 @@ function buildViewSpec(
         };
       });
       const hasLabels = points.some((p) => "label" in p);
-      // Без drillId: клик по точке уходит в новый ран агента (action 'why').
       const clicks: ClickTarget[] = [
         {
           on: "point",
@@ -348,10 +326,56 @@ function buildViewSpec(
         clicks,
       };
     }
+    case "map": {
+      // Конвенция: `lat`/`lon` — градусы WGS84; опц. `value` (агрегат) и `label`.
+      if (rows.length > 1000) {
+        throw new Error(
+          `map-SQL вернул ${rows.length} точек — агрегируй координаты (round + count) и поставь LIMIT 1000`,
+        );
+      }
+      const points = rows.map((row) => {
+        requireColumns(row, "map", ["lat", "lon"]);
+        const lat = Number(row.lat);
+        const lon = Number(row.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          throw new Error("map-SQL: колонки `lat` и `lon` обязаны быть числами (градусы)");
+        }
+        if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+          throw new Error(
+            `map-SQL: координаты вне диапазона (lat=${lat}, lon=${lon}) — фильтруй мусорные значения в WHERE`,
+          );
+        }
+        const value = row.value != null ? Number(row.value) : undefined;
+        if (value !== undefined && !Number.isFinite(value)) {
+          throw new Error("map-SQL: колонка `value` обязана быть числом (вес точки)");
+        }
+        return {
+          lat,
+          lon,
+          ...(value !== undefined ? { value } : {}),
+          ...(row.label != null && row.label !== "" ? { label: String(row.label) } : {}),
+        };
+      });
+      const hasLabels = points.some((p) => "label" in p);
+      const clicks: ClickTarget[] = [
+        {
+          on: "point",
+          selectionKeys: hasLabels ? ["label", "lat", "lon"] : ["lat", "lon"],
+          label: "Разобраться с этой точкой",
+        },
+      ];
+      return {
+        kind: "map",
+        title: generated.title,
+        points,
+        ...(generated.valueLabel ? { valueLabel: generated.valueLabel } : {}),
+        clicks,
+      };
+    }
     default:
-      // graph — до C5 (рендер) и B6 (temp tables под ко-старинг) не поддержан.
+      // graph — не собирается из строк SQL; триаж его не планирует.
       throw new Error(
-        `вид карточки '${generated.kind}' не поддержан до C5/B6 — выбери другой kind`,
+        `вид карточки '${generated.kind}' не собирается из SQL-строк — выбери другой kind`,
       );
   }
 }
@@ -368,64 +392,27 @@ function truncate(text: string, max = 300): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-/** Легаси-форма одной sql-карточки (тест-шов) заворачивается в план. */
-function normalizePlan(result: GeneratedSql | GeneratedPlan): GeneratedPlan {
-  if ("cards" in result) return result;
-  return { cards: [{ tool: "sql", ...result }] };
-}
-
-export function cardTitle(card: PlannedCard): string {
-  return card.tool === "sql" ? card.title : card.title || card.drillId;
+export function cardTitle(card: TriageCard): string {
+  return card.title;
 }
 
 /** Подпись карточки в сообщениях шагов: в плане из >1 карточки — в «ёлочках». */
-export function cardLabel(card: PlannedCard, manyCards: boolean): string {
-  const title = cardTitle(card);
-  return manyCards ? `«${title}»` : title;
-}
-
-function cardSource(card: PlannedCard): string {
-  return card.tool === "sql" ? `sql · ${card.kind}` : `drill:${card.drillId}`;
-}
-
-/**
- * Мгновенный срез: вопрос называет репозиторий → timeline звёзд по роллапам
- * (дрилл stars-by-day, сотни миллисекунд) эмитится ещё до ответа LLM.
- * Любой сбой — тихий пропуск: превью не имеет права ронять ран.
- */
-async function runInstantPreview(
-  ro: ClickHouseClient,
-  repo: string,
-  emit: StepEmitter,
-): Promise<ViewSpec | undefined> {
-  try {
-    const def = resolveDrill("stars-by-day");
-    const spec = viewSpecSchema.parse(
-      await def.execute(ro, def.params.parse({ repo })),
-    );
-    await emit({
-      step: "card_ready",
-      viewSpec: spec,
-      message: `Мгновенный срез по роллапам: «${
-        spec.kind === "verdict" ? "вердикт" : spec.title
-      }» — агент продолжает копать`,
-    });
-    return spec;
-  } catch {
-    return undefined;
-  }
+export function cardLabel(card: TriageCard, manyCards: boolean): string {
+  return manyCards ? `«${card.title}»` : card.title;
 }
 
 export type CardOutcome =
   | { ok: true; spec: ViewSpec; sql?: string; attempts: number }
   | { ok: false; error: string; attempts: number };
 
-/** Контекст исполнителя карточек — всё, что нужно и sql-, и drill-карточке. */
+/** Контекст исполнителя карточек. */
 export type CardRunnerContext = {
   ro: ClickHouseClient;
   emit: StepEmitter;
   input: AskRequest;
   schemaContext: SchemaContext[];
+  /** Тест-шов per-card генерации (только in-process). */
+  cardSqlImpl?: (input: GenerateCardSqlInput) => Promise<GeneratedSql>;
 };
 
 /**
@@ -434,26 +421,42 @@ export type CardRunnerContext = {
  * CardOutcome {ok:false}, не исключение).
  */
 export type CardRunner = (
-  cards: PlannedCard[],
+  cards: TriageCard[],
   ctx: CardRunnerContext,
 ) => Promise<CardOutcome[]>;
 
-/** sql-карточка: executing → (healing → executing)* → card_ready. */
-export async function runSqlCard(
-  card: { tool: "sql" } & GeneratedSql,
-  ctx: {
-    ro: ClickHouseClient;
-    emit: StepEmitter;
-    input: AskRequest;
-    schemaContext: SchemaContext[];
-    /** Подпись карточки в сообщениях шагов (план из >1 карточки). */
-    label: string;
-  },
+/**
+ * Одна карточка: генерация SQL → executing → (healing → executing)* →
+ * card_ready | card_failed. Никогда не бросает: любой исход — CardOutcome.
+ * Общая точка входа default-раннера и дочерней Trigger-таски investigate-card.
+ */
+export async function runPlannedCard(
+  card: TriageCard,
+  ctx: CardRunnerContext & { label: string },
 ): Promise<CardOutcome> {
   const { ro, emit, input, schemaContext, label } = ctx;
-  let generated: GeneratedSql = card;
-  const attemptErrors: string[] = [];
 
+  // SQL этой карточки пишется здесь же (на дочернем воркере) — карточки
+  // одного плана генерятся и исполняются параллельно.
+  await emit({
+    step: "generating_sql",
+    message: `${label} — пишу SQL под карточку ${card.kind}`,
+  });
+  let generated: GeneratedSql;
+  try {
+    generated = await (ctx.cardSqlImpl ?? generateCardSql)({
+      question: input.question,
+      schemaContext,
+      clickContext: input.context,
+      card: { kind: card.kind, title: card.title, ...(card.hint ? { hint: card.hint } : {}) },
+    });
+  } catch (err) {
+    const error = `${label}: не удалось сгенерировать SQL — ${truncate(errorMessage(err))}`;
+    await emit({ step: "card_failed", cardId: card.cardId, error, message: error });
+    return { ok: false, error, attempts: 0 };
+  }
+
+  const attemptErrors: string[] = [];
   for (let attempt = 1; attempt <= MAX_SQL_ATTEMPTS; attempt++) {
     await emit({
       step: "executing",
@@ -485,10 +488,11 @@ export async function runSqlCard(
       }
 
       const viewSpec = viewSpecSchema.parse(
-        buildViewSpec(generated, rows, verdictSummary, input.question),
+        buildViewSpec(generated, rows, verdictSummary),
       );
       await emit({
         step: "card_ready",
+        cardId: card.cardId,
         viewSpec,
         sql,
         message: `${label}: ${rows.length} строк → карточка ${viewSpec.kind}`,
@@ -511,6 +515,7 @@ export async function runSqlCard(
             question: input.question,
             schemaContext,
             clickContext: input.context,
+            card: { kind: card.kind, title: card.title, ...(card.hint ? { hint: card.hint } : {}) },
             previous: generated,
             error: lastError,
             attempt,
@@ -525,54 +530,9 @@ export async function runSqlCard(
   const summary = attemptErrors
     .map((e, i) => `Попытка ${i + 1}: ${truncate(e)}`)
     .join(" | ");
-  return {
-    ok: false,
-    error: `${label}: SQL не удался после ${MAX_SQL_ATTEMPTS} попыток. ${summary}`,
-    attempts: MAX_SQL_ATTEMPTS,
-  };
-}
-
-/** drill-карточка: готовый параметризованный запрос каталога A4, без healing. */
-export async function runDrillCard(
-  card: Extract<PlannedCard, { tool: "drill" }>,
-  ctx: { ro: ClickHouseClient; emit: StepEmitter; label: string },
-): Promise<CardOutcome> {
-  const { ro, emit, label } = ctx;
-  await emit({
-    step: "executing",
-    message: `${label} — дрилл ${card.drillId}`,
-  });
-  try {
-    const def = resolveDrill(card.drillId);
-    const params = def.params.parse(card.params);
-    const spec = viewSpecSchema.parse(await def.execute(ro, params));
-    await emit({
-      step: "card_ready",
-      viewSpec: spec,
-      message: `${label}: дрилл ${card.drillId} → карточка ${spec.kind}`,
-    });
-    return { ok: true, spec, attempts: 1 };
-  } catch (err) {
-    return {
-      ok: false,
-      error: `${label}: дрилл ${card.drillId} не выполнился — ${truncate(errorMessage(err))}`,
-      attempts: 1,
-    };
-  }
-}
-
-/**
- * Одна карточка плана любого инструмента — общая точка входа default-раннера
- * и дочерней Trigger-таски investigate-card. Никогда не бросает: любой исход —
- * CardOutcome.
- */
-export async function runPlannedCard(
-  card: PlannedCard,
-  ctx: CardRunnerContext & { label: string },
-): Promise<CardOutcome> {
-  return card.tool === "sql"
-    ? runSqlCard(card, ctx)
-    : runDrillCard(card, ctx);
+  const error = `${label}: SQL не удался после ${MAX_SQL_ATTEMPTS} попыток. ${summary}`;
+  await emit({ step: "card_failed", cardId: card.cardId, error: truncate(error, 600) });
+  return { ok: false, error, attempts: MAX_SQL_ATTEMPTS };
 }
 
 /** Дефолтный исполнитель карточек: параллельный Promise.all в текущем процессе. */
@@ -599,70 +559,83 @@ export async function runInvestigatePipeline(
   let errorEmitted = false;
 
   try {
-    // -- мгновенный срез (параллельно с exploring и LLM) ---------------------
-    // Стартует ПЕРВЫМ: дриллу не нужен контекст схемы, и он прячет латентность
-    // живого exploration. Только для свежих вопросов: у кликов «почему?»
-    // дриллы уже были на экране.
-    const questionRepo = input.context
-      ? undefined
-      : input.question.match(/[\w.-]+\/[\w.-]+/)?.[0];
-    const previewPromise: Promise<ViewSpec | undefined> =
-      questionRepo && REPO_NAME_RE.test(questionRepo)
-        ? runInstantPreview(ro, questionRepo, emit)
-        : Promise.resolve(undefined);
-
-    // -- exploring: всегда живьём из ClickHouse ------------------------------
-    // Персистентного кэша схемы нет: метаданные и так лежат в ClickHouse.
-    // getSchemaContext — только короткая мемоизация в памяти процесса.
+    // -- фаза A: каталог всех видимых таблиц (дёшево) -------------------------
     await emit({
       step: "exploring",
-      message: "Исследую схему живьём (system.tables/columns + статистика)",
+      message: "Смотрю каталог таблиц (system.tables/columns)",
     });
-    const schemaContext = await getSchemaContext(ro);
+    const catalog = await getCatalog(ro);
 
-    // -- generating_sql → planning ------------------------------------------
+    // -- триаж на быстрой модели ---------------------------------------------
     await emit({
       step: "generating_sql",
-      message: `Планирую карточки по таблице ${schemaContext[0].table}`,
+      message: "Триаж: понимаю вопрос, выбираю таблицы и карточки",
     });
-    const plan = normalizePlan(
-      await (options.generateSqlImpl ?? generateSql)({
-        question: input.question,
-        schemaContext,
-        clickContext: input.context,
-      }),
-    );
+    const triage = await (options.triageImpl ?? triageQuestion)({
+      question: input.question,
+      catalog,
+      clickContext: input.context,
+    });
 
-    const previewSpec = await previewPromise;
-    // Дедуп: план часто повторяет мгновенный срез (stars-by-day того же репо).
-    const cards = plan.cards.filter(
-      (c) =>
-        !(
-          previewSpec &&
-          c.tool === "drill" &&
-          c.drillId === "stars-by-day" &&
-          String(c.params.repo ?? c.params.series ?? "") === questionRepo
-        ),
-    );
+    // -- clarify / impossible: честный ранний выход ---------------------------
+    if (triage.decision === "clarify") {
+      await emit({
+        step: "clarify",
+        question: triage.question,
+        ...(triage.options ? { options: triage.options } : {}),
+        message: `Нужно уточнение: ${triage.question}`,
+      });
+      await emit({
+        step: "done",
+        viewSpecs: [],
+        message: "Жду уточнения — задайте вопрос ещё раз с ответом",
+      });
+      return { viewSpecs: [], sql: "", attempts: 0 };
+    }
+    if (triage.decision === "impossible") {
+      await emit({
+        step: "impossible",
+        reason: triage.reason,
+        ...(triage.available ? { available: triage.available } : {}),
+        message: `По имеющимся данным ответить нельзя: ${truncate(triage.reason, 200)}`,
+      });
+      await emit({
+        step: "done",
+        viewSpecs: [],
+        message: "Данных под вопрос нет — см. подсказки, о чём спросить",
+      });
+      return { viewSpecs: [], sql: "", attempts: 0 };
+    }
 
+    // -- board_planned: скелеты дашборда на экран ещё до SQL ------------------
+    const cards = triage.cards;
     await emit({
-      step: "planning",
-      cards: cards.map((c) => ({ title: cardTitle(c), source: cardSource(c) })),
+      step: "board_planned",
+      cards: cards.map(({ cardId, kind, title }) => ({ cardId, kind, title })),
       message:
-        cards.length === 0
-          ? "План совпал с мгновенным срезом — он уже на экране"
-          : cards.length === 1
-            ? `Одна карточка: «${cardTitle(cards[0])}»`
-            : `Карточек: ${cards.length}, параллельно — ${cards
-                .map((c) => `«${cardTitle(c)}»`)
-                .join(", ")}`,
+        cards.length === 1
+          ? `Одна карточка: «${cards[0].title}»`
+          : `Карточек: ${cards.length} — ${cards.map((c) => `«${c.title}»`).join(", ")}`,
     });
+
+    // -- фаза B: глубокая разведка только выбранных таблиц --------------------
+    await emit({
+      step: "exploring",
+      message: `Глубокая разведка: ${triage.tables.join(", ")}`,
+    });
+    const schemaContext = await exploreTables(ro, triage.tables);
 
     // -- параллельное исполнение карточек (шов cardRunner) -------------------
     // Дефолт — Promise.all в этом же процессе; Trigger-таска investigate
     // подставляет исполнитель на параллельных дочерних ранах.
     const runCards = options.cardRunner ?? runCardsInProcess;
-    const outcomes = await runCards(cards, { ro, emit, input, schemaContext });
+    const outcomes = await runCards(cards, {
+      ro,
+      emit,
+      input,
+      schemaContext,
+      ...(options.cardSqlImpl ? { cardSqlImpl: options.cardSqlImpl } : {}),
+    });
 
     const succeeded = outcomes.filter((o) => o.ok);
     const failed = outcomes.filter((o) => !o.ok);
@@ -677,10 +650,7 @@ export async function runInvestigatePipeline(
     }
 
     // -- done ---------------------------------------------------------------
-    const viewSpecs = [
-      ...(previewSpec ? [previewSpec] : []),
-      ...succeeded.map((o) => o.spec),
-    ];
+    const viewSpecs = succeeded.map((o) => o.spec);
     const sql = succeeded
       .filter((o) => o.sql)
       .map((o) => o.sql as string)
@@ -697,7 +667,7 @@ export async function runInvestigatePipeline(
     });
     return { viewSpecs, sql, attempts };
   } catch (err) {
-    // Неожиданный сбой вне цикла исполнения (exploring/generating_sql/эмит) —
+    // Неожиданный сбой вне цикла исполнения (каталог/триаж/разведка/эмит) —
     // тоже завершаем терминальным шагом error, чтобы фронт увидел фоллбек.
     if (!errorEmitted) {
       try {

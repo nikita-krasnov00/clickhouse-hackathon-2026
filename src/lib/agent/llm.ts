@@ -1,14 +1,16 @@
 /**
  * B4 — клиент OpenRouter (chat completions) для text-to-SQL и самопочинки.
  *
- * Нативный fetch (Node 20+), без новых зависимостей. Модель — env LLM_MODEL
- * (полный слаг OpenRouter или короткий алиас, см. MODEL_ALIASES); дефолт
- * minimax/minimax-m3. Помимо MiniMax поддержана OpenAI GPT-5.6 Terra
- * (openai/gpt-5.6-terra) — reasoning-модель GPT-5.x, которой НЕ шлём
- * temperature (её эндпоинт этот параметр не принимает). При недоступности
- * выбранной модели (4xx «нет такой модели») спускаемся по цепочке MiniMax
- * вниз. Рабочая модель кэшируется на процесс, чтобы фоллбек-пробы не
- * повторялись на каждый вызов.
+ * Нативный fetch (Node 20+), без новых зависимостей. ДВА ЯРУСА моделей:
+ *   - main — тяжёлая работа (SQL, самопочинка, вердикты): env LLM_MODEL
+ *     (слаг OpenRouter или алиас из MODEL_ALIASES), дефолт minimax/minimax-m3,
+ *     при недоступности — цепочка MiniMax вниз;
+ *   - fast — триаж вопроса и подсказки-пресеты, где важна скорость первого
+ *     ответа: env LLM_MODEL_FAST, дефолт openai/gpt-5.6-terra (~1.5-2 c),
+ *     фоллбек — основная цепочка.
+ * Reasoning-моделям GPT-5.x/o-серии temperature НЕ отправляется (их эндпоинт
+ * параметр не принимает). Рабочая модель каждого яруса кэшируется на процесс,
+ * чтобы фоллбек-пробы не повторялись на каждый вызов.
  *
  * Ретраи: 429/5xx/сеть/таймаут — один повтор с паузой, затем следующая модель.
  *
@@ -78,13 +80,34 @@ const TEMPERATURE = 0.2;
 /** С запасом: MiniMax — reasoning-модели, thinking-токены тоже считаются. */
 const MAX_TOKENS = 8_000;
 
-/** Рабочая модель, найденная фоллбек-пробами; кэш на процесс. */
-let resolvedModel: string | undefined;
+/**
+ * Ярусы моделей: main — тяжёлая работа (SQL/heal/verdict), fast — триаж и
+ * подсказки, где решает латентность первого ответа.
+ */
+export type LlmTier = "main" | "fast";
 
-function candidateModels(): string[] {
-  const first = resolvedModel ?? resolveModelAlias(config.llm.model);
+/** Дефолт быстрого яруса — GPT-5.6 Terra (env LLM_MODEL_FAST переопределяет). */
+export const FAST_LLM_DEFAULT = OPENAI_GPT_5_6_TERRA;
+
+/** Рабочая модель каждого яруса, найденная фоллбек-пробами; кэш на процесс. */
+const resolvedByTier: Partial<Record<LlmTier, string>> = {};
+
+function mainCandidates(): string[] {
+  const first = resolvedByTier.main ?? resolveModelAlias(config.llm.model);
   if (!first) return [...MODEL_FALLBACKS];
   return [first, ...MODEL_FALLBACKS.filter((m) => m !== first)];
+}
+
+function candidateModels(tier: LlmTier): string[] {
+  if (tier === "fast") {
+    const first =
+      resolvedByTier.fast ??
+      resolveModelAlias(config.llm.fastModel) ??
+      FAST_LLM_DEFAULT;
+    // Фоллбек быстрого яруса — основная цепочка: медленный триаж лучше мёртвого.
+    return [first, ...mainCandidates().filter((m) => m !== first)];
+  }
+  return mainCandidates();
 }
 
 function sleep(ms: number): Promise<void> {
@@ -166,14 +189,16 @@ async function attemptOnce(
 }
 
 export type ChatCompleteOptions = {
-  /** Назначение вызова для операционного лога (generate_plan, heal_sql, …). */
+  /** Назначение вызова для операционного лога (card_sql, heal_sql, triage, …). */
   purpose?: string;
+  /** Ярус модели: 'fast' — триаж/подсказки, дефолт 'main'. */
+  tier?: LlmTier;
 };
 
 /**
- * Один chat-completion: модель из env/дефолта, фоллбеки по цепочке MiniMax,
- * один ретрай на временных ошибках. Возвращает сырой content — парсинг JSON
- * из ответа делает вызывающий (generate-sql.ts).
+ * Один chat-completion: модель из env/дефолта выбранного яруса, фоллбеки по
+ * цепочке, один ретрай на временных ошибках. Возвращает сырой content —
+ * парсинг JSON из ответа делает вызывающий (llm-json.ts).
  */
 export async function chatComplete(
   messages: ChatMessage[],
@@ -181,10 +206,11 @@ export async function chatComplete(
 ): Promise<ChatCompletionResult> {
   const started = Date.now();
   const purpose = options?.purpose ?? "unknown";
+  const tier = options?.tier ?? "main";
   const failures: string[] = [];
   let attemptNo = 0;
 
-  for (const model of candidateModels()) {
+  for (const model of candidateModels(tier)) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       attemptNo += 1;
       const attemptStarted = Date.now();
@@ -203,7 +229,7 @@ export async function chatComplete(
         elapsedMs: attemptMs,
       });
       if (result.ok) {
-        resolvedModel = model;
+        resolvedByTier[tier] = model;
         const elapsedMs = Date.now() - started;
         console.log(`[llm] purpose=${purpose} model=${model} elapsed=${elapsedMs}ms`);
         return { content: result.content, model, elapsedMs };
