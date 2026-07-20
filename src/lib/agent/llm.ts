@@ -1,10 +1,14 @@
 /**
  * B4 — клиент OpenRouter (chat completions) для text-to-SQL и самопочинки.
  *
- * Нативный fetch (Node 20+), без новых зависимостей. Модель — env LLM_MODEL,
- * дефолт minimax/minimax-m3; при недоступности модели (4xx «нет такой модели»)
- * спускаемся по цепочке MiniMax-версий вниз. Рабочая модель кэшируется на
- * процесс, чтобы фоллбек-пробы не повторялись на каждый вызов.
+ * Нативный fetch (Node 20+), без новых зависимостей. Модель — env LLM_MODEL
+ * (полный слаг OpenRouter или короткий алиас, см. MODEL_ALIASES); дефолт
+ * minimax/minimax-m3. Помимо MiniMax поддержана OpenAI GPT-5.6 Terra
+ * (openai/gpt-5.6-terra) — reasoning-модель GPT-5.x, которой НЕ шлём
+ * temperature (её эндпоинт этот параметр не принимает). При недоступности
+ * выбранной модели (4xx «нет такой модели») спускаемся по цепочке MiniMax
+ * вниз. Рабочая модель кэшируется на процесс, чтобы фоллбек-пробы не
+ * повторялись на каждый вызов.
  *
  * Ретраи: 429/5xx/сеть/таймаут — один повтор с паузой, затем следующая модель.
  *
@@ -39,6 +43,35 @@ const MODEL_FALLBACKS = [
   "minimax/minimax-m2",
 ];
 
+/** OpenAI GPT-5.6 Terra на OpenRouter (reasoning-серия GPT-5.x). */
+export const OPENAI_GPT_5_6_TERRA = "openai/gpt-5.6-terra";
+
+/**
+ * Короткие алиасы для LLM_MODEL — чтобы в .env можно было указать
+ * «gpt-5.6-terra» вместо полного слага. Ключи сравниваются в нижнем регистре;
+ * полный слаг OpenRouter (`openai/…`, `minimax/…`) всегда можно задать напрямую.
+ */
+const MODEL_ALIASES: Record<string, string> = {
+  "gpt-5.6-terra": OPENAI_GPT_5_6_TERRA,
+  "gpt-5.6-terra-pro": "openai/gpt-5.6-terra-pro",
+  "minimax-m3": DEFAULT_LLM_MODEL,
+};
+
+/** Разворачивает алиас в слаг OpenRouter; неизвестное значение — как есть. */
+function resolveModelAlias(model: string | undefined): string | undefined {
+  if (!model) return model;
+  return MODEL_ALIASES[model.trim().toLowerCase()] ?? model;
+}
+
+/**
+ * reasoning-модели OpenAI (GPT-5.x, o-серия) на OpenRouter НЕ принимают
+ * temperature — для них параметр не отправляем; остальным (MiniMax и т.п.)
+ * задаём низкую температуру ради детерминизма text-to-SQL.
+ */
+function modelSupportsTemperature(model: string): boolean {
+  return !/^openai\/(gpt-5|o\d)/i.test(model);
+}
+
 const REQUEST_TIMEOUT_MS = 120_000;
 const RETRY_PAUSE_MS = 1_500;
 const TEMPERATURE = 0.2;
@@ -49,7 +82,7 @@ const MAX_TOKENS = 8_000;
 let resolvedModel: string | undefined;
 
 function candidateModels(): string[] {
-  const first = resolvedModel ?? config.llm.model;
+  const first = resolvedModel ?? resolveModelAlias(config.llm.model);
   if (!first) return [...MODEL_FALLBACKS];
   return [first, ...MODEL_FALLBACKS.filter((m) => m !== first)];
 }
@@ -72,18 +105,21 @@ async function attemptOnce(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
+    const requestBody: Record<string, unknown> = {
+      model,
+      messages,
+      max_tokens: MAX_TOKENS,
+    };
+    // GPT-5.x/o-серия temperature не принимают; остальным — для детерминизма.
+    if (modelSupportsTemperature(model)) requestBody.temperature = TEMPERATURE;
+
     const res = await fetch(OPENROUTER_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: TEMPERATURE,
-        max_tokens: MAX_TOKENS,
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
 
