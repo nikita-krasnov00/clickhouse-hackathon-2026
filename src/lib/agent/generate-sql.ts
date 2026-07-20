@@ -288,8 +288,13 @@ const SQL_RULES = `## SQL rules (mandatory)
 - ClickHouse SQL dialect only.
 - Exactly ONE read-only SELECT statement (WITH … SELECT is fine). Never INSERT/CREATE/ALTER/DROP/etc. No semicolons, no multiple statements.
 - ALWAYS end with a LIMIT: at most 1000 rows for time series, 10–50 for leaderboards/histograms.
-- Star events are rows with event_type = 'WatchEvent'. Fork = 'ForkEvent', issues = 'IssuesEvent', PRs = 'PullRequestEvent'.
+- Star events are rows with event_type = 'WatchEvent'. Fork = 'ForkEvent', PRs = 'PullRequestEvent'.
 - Use only tables and columns present in the schema context. Mind the actual date range of the data.
+
+## Data reality — check event_type counts before you build on one
+- The schema context lists every event_type with its real row count. In this dataset ONLY four types are populated: WatchEvent (~stars), CreateEvent, PullRequestEvent (~PRs / contribution activity), ForkEvent — tens of millions each. Every OTHER type (PushEvent, IssuesEvent, IssueCommentEvent, ReleaseEvent, …) has only a handful of rows and is effectively ABSENT.
+- NEVER make the main signal of a card an effectively-absent event type. A "stars vs commits (PushEvent)" scatter joins on ~5 repos and looks broken. There are no usable commit/push events here.
+- When the user asks about "commits", "contributions" or "development activity", use PullRequestEvent as the populated proxy and LABEL it honestly (e.g. "PR-активность", not "коммиты"). If the question truly has no populated signal, answer with a verdict card that says so plainly instead of drawing an empty chart.
 
 ## Performance — these tables have tens/hundreds of millions of rows, write index-friendly SQL
 - Each table's "sortingKey" (ORDER BY / primary key) is in the schema context. ClickHouse's primary index only skips data when your WHERE filters a PREFIX of that key: an equality on the 1st key column, then the 2nd, etc. Filtering a column that is NOT a key prefix, or skipping over an earlier key column, forces a full scan.
