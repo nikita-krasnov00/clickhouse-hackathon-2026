@@ -1,4 +1,20 @@
 import { defineConfig } from "@trigger.dev/sdk";
+import { syncEnvVars } from "@trigger.dev/build/extensions/core";
+
+// Прикладные переменные тасок (группы src/lib/config.ts). Деплой у нас ручной
+// (README), поэтому источник правды — локальный .env: syncEnvVars переливает
+// эти переменные в окружение Trigger.dev при каждом deploy. Секреты платформ
+// (TRIGGER_SECRET_KEY, админский CLICKHOUSE_USER/PASSWORD) намеренно не в списке.
+const TASK_ENV_VARS = [
+  "CLICKHOUSE_URL",
+  "AGENT_RO_USER",
+  "AGENT_RO_PASSWORD",
+  "AGENT_SCRATCH_USER",
+  "AGENT_SCRATCH_PASSWORD",
+  "OPENROUTER_API_KEY",
+  "LLM_MODEL",
+  "LLM_MODEL_FAST",
+] as const;
 
 export default defineConfig({
   // Project ref из дашборда Trigger.dev cloud (Project settings → Project ref).
@@ -22,6 +38,18 @@ export default defineConfig({
     },
   },
   build: {
-    extensions: [],
+    extensions: [
+      syncEnvVars(() => {
+        try {
+          process.loadEnvFile(".env"); // существующие переменные процесса не перекрывает
+        } catch {
+          // .env нет (например, CI) — работаем с тем, что уже в окружении
+        }
+        return TASK_ENV_VARS.flatMap((name) => {
+          const value = process.env[name]?.trim();
+          return value ? [{ name, value }] : [];
+        });
+      }),
+    ],
   },
 });

@@ -59,22 +59,25 @@ Project ref захардкожен в `trigger.config.ts` (канон Trigger.de
 
 ```bash
 npx trigger.dev@latest login     # один раз
-npx trigger.dev@latest deploy    # собирает и заливает src/trigger/ в prod
+npm run deploy:trigger           # собирает и заливает src/trigger/ в prod
 ```
 
-В дашборде Trigger.dev (prod-окружение → Environment variables) задать переменные
-ClickHouse из `.env.example` (`CLICKHOUSE_URL`, `AGENT_RO_*`, `AGENT_SCRATCH_*`).
+Переменные окружения в дашборде задавать не нужно: расширение `syncEnvVars`
+(`trigger.config.ts`) при каждом деплое переливает прикладные переменные
+(ClickHouse + LLM) из локального `.env` в prod-окружение Trigger.dev.
 
 **Vercel** — деплой Next.js:
 
 ```bash
-npx vercel link      # привязать директорию к проекту (один раз)
+npx vercel login                 # один раз
+npx vercel link                  # привязать директорию к проекту (один раз)
+TRIGGER_SECRET_KEY_PROD=tr_prod_… npm run vercel:env   # залить env из .env в production
 npx vercel deploy --prod
 ```
 
-В настройках проекта Vercel (Settings → Environment Variables) задать все переменные
-из `.env.example`; `TRIGGER_SECRET_KEY` — **prod**-ключ (`tr_prod_…`, дашборд Trigger.dev →
-API Keys), не dev-ключ из локального `.env`.
+`vercel:env` (scripts/vercel-env-push.sh) заливает переменные ClickHouse + LLM из
+`.env`; `TRIGGER_SECRET_KEY_PROD` — **prod**-ключ Trigger.dev (`tr_prod_…`, дашборд →
+API Keys), передаётся отдельно, чтобы dev-ключ из `.env` не попал в прод.
 
 После деплоя проверить публичную ссылку со свежего устройства (задача J4).
 
