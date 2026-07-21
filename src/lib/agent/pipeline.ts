@@ -39,10 +39,12 @@ import {
   type TriageResult,
 } from "./triage";
 import {
+  annotateCard,
   generateCardSql,
   healSql,
   sanitizeSql,
   summarizeVerdict,
+  type CardAnnotation,
   type GenerateCardSqlInput,
   type GeneratedSql,
   type VerdictSummary,
@@ -135,15 +137,25 @@ function requireColumns(row: ResultRow, kind: string, columns: string[]): void {
  *
  * Клик-цели generic: у любого клика один путь — новый ран агента (action
  * 'why') с ClickContext; подписи нейтральные, датасет-специфичных дриллов нет.
+ * annotation (insight/metricNote) — от annotateCard по фактическим строкам;
+ * добавляется всем видам-чартам (verdict — сам себе вывод).
  */
 function buildViewSpec(
   generated: GeneratedSql,
   rows: ResultRow[],
   verdictSummary?: VerdictSummary,
+  annotation?: CardAnnotation,
 ): unknown {
   if (rows.length === 0) {
     throw new Error("SQL вернул 0 строк — карточку не из чего собрать");
   }
+  /** Опциональные поля аннотации — в форме, готовой к спреду в спек. */
+  const note = annotation
+    ? {
+        insight: annotation.insight,
+        ...(annotation.metricNote ? { metricNote: annotation.metricNote } : {}),
+      }
+    : {};
   switch (generated.kind) {
     case "timeline": {
       // Опциональная колонка `series` разводит точки по нескольким линиям.
@@ -171,6 +183,7 @@ function buildViewSpec(
         series: [...bySeries].map(([name, points]) => ({ name, points })),
         ...(generated.anomalyWindow ? { anomalyWindow: generated.anomalyWindow } : {}),
         clicks,
+        ...note,
       };
     }
     case "leaderboard": {
@@ -192,6 +205,7 @@ function buildViewSpec(
           Object.fromEntries(keys.map((key) => [key, toCell(row[key])])),
         ),
         clicks,
+        ...note,
       };
     }
     case "histogram": {
@@ -212,6 +226,7 @@ function buildViewSpec(
         bucketLabel: generated.bucketLabel ?? generated.title,
         buckets,
         clicks,
+        ...note,
       };
     }
     case "heatmap": {
@@ -239,6 +254,7 @@ function buildViewSpec(
         yLabels,
         cells,
         clicks,
+        ...note,
       };
     }
     case "verdict": {
@@ -286,6 +302,7 @@ function buildViewSpec(
         ...(row.detail != null && row.detail !== ""
           ? { detail: String(row.detail) }
           : {}),
+        ...note,
       };
     }
     case "scatter": {
@@ -324,6 +341,7 @@ function buildViewSpec(
         ...(generated.xScale ? { xScale: generated.xScale } : {}),
         ...(generated.yScale ? { yScale: generated.yScale } : {}),
         clicks,
+        ...note,
       };
     }
     case "map": {
@@ -370,6 +388,7 @@ function buildViewSpec(
         points,
         ...(generated.valueLabel ? { valueLabel: generated.valueLabel } : {}),
         clicks,
+        ...note,
       };
     }
     default:
@@ -472,9 +491,13 @@ export async function runPlannedCard(
       const sql = sanitizeSql(generated.sql);
       const rows = await executeSql(ro, sql);
 
-      // Для verdict — второй короткий LLM-вызов: вывод по фактическим цифрам.
-      // Сбой вызова не роняет карточку: buildViewSpec подставит title + low.
+      // Второй короткий LLM-вызов по фактическим цифрам (быстрый ярус):
+      //   - verdict → вывод + уверенность (summarizeVerdict);
+      //   - остальные виды → аннотация insight/metricNote (annotateCard) —
+      //     «вывод и объяснение метрики» под каждым чартом.
+      // Сбой не роняет карточку: verdict падает в title+low, чарт — без сноски.
       let verdictSummary: VerdictSummary | undefined;
+      let annotation: CardAnnotation | undefined;
       if (generated.kind === "verdict") {
         try {
           verdictSummary = await summarizeVerdict({
@@ -485,10 +508,21 @@ export async function runPlannedCard(
         } catch {
           verdictSummary = undefined;
         }
+      } else {
+        try {
+          annotation = await annotateCard({
+            question: input.question,
+            card: { kind: generated.kind, title: generated.title },
+            sql,
+            rows,
+          });
+        } catch {
+          annotation = undefined;
+        }
       }
 
       const viewSpec = viewSpecSchema.parse(
-        buildViewSpec(generated, rows, verdictSummary),
+        buildViewSpec(generated, rows, verdictSummary, annotation),
       );
       await emit({
         step: "card_ready",

@@ -273,6 +273,63 @@ export async function healSql(input: HealSqlInput): Promise<GeneratedSql> {
   );
 }
 
+const cardAnnotationSchema = z.object({
+  insight: z.string().min(1),
+  metricNote: z.string().nullish(),
+});
+
+export type CardAnnotation = {
+  insight: string;
+  metricNote?: string;
+};
+
+/**
+ * Аннотация карточки ПОСЛЕ исполнения SQL: короткий вызов быстрого яруса по
+ * ФАКТИЧЕСКИМ строкам результата. insight — вывод аналитика с цифрами,
+ * metricNote — что именно посчитано (агрегация/фильтры/период — из SQL).
+ * Сбой — на вызывающем: карточка без аннотации валидна.
+ */
+export async function annotateCard(input: {
+  question: string;
+  card: { kind: ViewKind; title: string };
+  sql: string;
+  rows: Record<string, unknown>[];
+}): Promise<CardAnnotation> {
+  // Модели хватает сэмпла: первые строки + честный счётчик всего.
+  const sample = input.rows.slice(0, 40);
+  const parsed = await askAndParse(
+    [
+      {
+        role: "system",
+        content:
+          "You are annotating ONE dashboard card of «Insight Desk» AFTER its SQL has already run against ClickHouse. You get the user's question, the card (kind + title), the SQL and a sample of the ACTUAL result rows.\n" +
+          'Reply with ONLY strict JSON: {"insight": "…", "metricNote": "…"}.\n' +
+          "- insight: 1–2 sentences — the takeaway a sharp analyst would say out loud, grounded ONLY in the provided rows. Quote 1–2 key numbers; name the leader / spike / shape of the distribution. If the rows are too flat or the sample too small to conclude anything, say exactly that, plainly. Write in the language of the question.\n" +
+          "- metricNote: ONE sentence for a non-analyst explaining what the metric IS: what was counted/summed/averaged, over which filters and time window, in what units — read it from the SQL. Same language. No speculation, no marketing.",
+      },
+      {
+        role: "user",
+        content: [
+          "## Question",
+          input.question,
+          "## Card",
+          JSON.stringify(input.card),
+          "## SQL that produced the rows",
+          input.sql,
+          `## Result rows (first ${sample.length} of ${input.rows.length})`,
+          JSON.stringify(sample),
+        ].join("\n\n"),
+      },
+    ],
+    (content) => cardAnnotationSchema.parse(JSON.parse(extractJsonObject(content))),
+    { purpose: "card_insight", tier: "fast" },
+  );
+  return {
+    insight: parsed.insight.trim(),
+    ...(parsed.metricNote?.trim() ? { metricNote: parsed.metricNote.trim() } : {}),
+  };
+}
+
 const verdictSummarySchema = z.object({
   verdict: z.string().min(1),
   confidence: z.enum(["low", "medium", "high"]),

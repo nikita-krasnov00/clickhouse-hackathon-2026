@@ -182,6 +182,18 @@ export type MapPoint = z.infer<typeof mapPointSchema>;
 // Варианты ViewSpec
 // ---------------------------------------------------------------------------
 
+/**
+ * Аннотация карточки — пишется ОТДЕЛЬНЫМ быстрым LLM-вызовом ПОСЛЕ исполнения
+ * SQL, по фактическим строкам результата (annotateCard, generate-sql.ts):
+ *   - insight: вывод аналитика — 1–2 предложения с ключевыми цифрами;
+ *   - metricNote: что именно посчитано (агрегация, фильтры, период, единицы).
+ * Поля опциональны у всех видов-чартов: сбой аннотатора не роняет карточку.
+ */
+const cardAnnotationFields = {
+  insight: z.string().optional(),
+  metricNote: z.string().optional(),
+};
+
 export const timelineSpecSchema = z.strictObject({
   kind: z.literal("timeline"),
   title: z.string(),
@@ -189,6 +201,7 @@ export const timelineSpecSchema = z.strictObject({
   /** [от, до] — закрашиваемое окно аномалии. */
   anomalyWindow: z.tuple([dateTimeStringSchema, dateTimeStringSchema]).optional(),
   clicks: z.array(clickTargetSchema),
+  ...cardAnnotationFields,
 });
 export type TimelineSpec = z.infer<typeof timelineSpecSchema>;
 
@@ -198,6 +211,7 @@ export const leaderboardSpecSchema = z.strictObject({
   columns: z.array(columnSchema),
   rows: z.array(rowSchema),
   clicks: z.array(clickTargetSchema),
+  ...cardAnnotationFields,
 });
 export type LeaderboardSpec = z.infer<typeof leaderboardSpecSchema>;
 
@@ -208,6 +222,7 @@ export const histogramSpecSchema = z.strictObject({
   bucketLabel: z.string(),
   buckets: z.array(bucketSchema),
   clicks: z.array(clickTargetSchema),
+  ...cardAnnotationFields,
 });
 export type HistogramSpec = z.infer<typeof histogramSpecSchema>;
 
@@ -228,6 +243,7 @@ export const heatmapSpecSchema = z.strictObject({
   yLabels: z.array(z.string()),
   cells: z.array(heatmapCellSchema),
   clicks: z.array(clickTargetSchema),
+  ...cardAnnotationFields,
 });
 export type HeatmapSpec = z.infer<typeof heatmapSpecSchema>;
 
@@ -249,8 +265,9 @@ export const bigNumberSpecSchema = z.strictObject({
   label: z.string(),
   /** Изменение в % к базе: > 0 — рост (зелёный), < 0 — падение (красный). */
   delta: z.number().optional(),
-  /** Вторичная подпись-контекст («против медианы 87 звёзд в неделю»). */
+  /** Вторичная подпись-контекст («против медианы 87 в неделю»). */
   detail: z.string().optional(),
+  ...cardAnnotationFields,
 });
 export type BigNumberSpec = z.infer<typeof bigNumberSpecSchema>;
 
@@ -271,6 +288,7 @@ export const scatterSpecSchema = z.strictObject({
   xScale: axisScaleSchema.optional(),
   yScale: axisScaleSchema.optional(),
   clicks: z.array(clickTargetSchema),
+  ...cardAnnotationFields,
 });
 export type ScatterSpec = z.infer<typeof scatterSpecSchema>;
 
@@ -287,6 +305,7 @@ export const mapSpecSchema = z.strictObject({
   /** Подпись величины value для легенды («посадки», «выручка»). */
   valueLabel: z.string().optional(),
   clicks: z.array(clickTargetSchema),
+  ...cardAnnotationFields,
 });
 export type MapSpec = z.infer<typeof mapSpecSchema>;
 

@@ -133,6 +133,30 @@ function FallbackCard({ spec, error }: { spec: unknown; error: string }) {
   );
 }
 
+/**
+ * Сноска аннотации под чартом: вывод по фактическим цифрам (annotateCard) и
+ * объяснение метрики. Рендерится в общей обёртке — одинаково у всех видов.
+ */
+function CardInsight({ insight, metricNote }: { insight?: string; metricNote?: string }) {
+  if (!insight && !metricNote) return null;
+  return (
+    <footer className="mt-3 flex flex-col gap-1 border-t border-border pt-2.5">
+      {insight && (
+        <p className="text-[13px] leading-snug">
+          <span className="mr-1.5 font-semibold text-accent">Вывод:</span>
+          {insight}
+        </p>
+      )}
+      {metricNote && (
+        <p className="text-[11px] leading-snug text-muted">
+          <span className="mr-1">Метрика:</span>
+          {metricNote}
+        </p>
+      )}
+    </footer>
+  );
+}
+
 export function ViewSpecCard({
   cardId,
   spec,
@@ -158,6 +182,10 @@ export function ViewSpecCard({
         cardId,
         onClickContext: onClickContext ? (ctx) => onClickContext(ctx, v) : undefined,
       })}
+      <CardInsight
+        insight={"insight" in v ? v.insight : undefined}
+        metricNote={"metricNote" in v ? v.metricNote : undefined}
+      />
     </CardShell>
   );
 }
