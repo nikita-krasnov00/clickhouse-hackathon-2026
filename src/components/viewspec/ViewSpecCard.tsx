@@ -27,6 +27,9 @@ import { CalendarHeatmapCard } from "./CalendarHeatmapCard";
 import { BigNumberCard } from "./BigNumberCard";
 import { ScatterCard } from "./ScatterCard";
 import { MapCard } from "./MapCard";
+import { TreemapCard } from "./TreemapCard";
+import { FunnelCard } from "./FunnelCard";
+import { BoxplotCard } from "./BoxplotCard";
 
 type CommonProps = {
   cardId: string;
@@ -55,6 +58,9 @@ const RENDERERS = {
   bignumber: (p: RendererProps<"bignumber">) => <BigNumberCard spec={p.spec} />,
   scatter: (p: RendererProps<"scatter">) => <ScatterCard {...p} />,
   map: (p: RendererProps<"map">) => <MapCard {...p} />,
+  treemap: (p: RendererProps<"treemap">) => <TreemapCard {...p} />,
+  funnel: (p: RendererProps<"funnel">) => <FunnelCard {...p} />,
+  boxplot: (p: RendererProps<"boxplot">) => <BoxplotCard {...p} />,
 } satisfies { [K in ViewKind]: (p: RendererProps<K>) => ReactNode };
 
 function renderByKind(spec: ViewSpec, common: CommonProps): ReactNode {

@@ -24,6 +24,9 @@ export const VIEW_KINDS = [
   "bignumber",
   "scatter",
   "map",
+  "treemap",
+  "funnel",
+  "boxplot",
 ] as const;
 
 export const viewKindSchema = z.enum(VIEW_KINDS);
@@ -46,21 +49,25 @@ export const dateTimeStringSchema = z
 //   { on, selectionKeys, label? }
 //
 //  - `on` — класс элемента, к которому применяется цель:
-//      'point'  → точка серии в timeline или точка scatter
+//      'point'  → точка серии в timeline, точка scatter или точка map
 //      'row'    → строка leaderboard
-//      'bucket' → корзина histogram
+//      'bucket' → корзина histogram или этап funnel
 //      'cell'   → ячейка heatmap
+//      'tile'   → плитка treemap
+//      'box'    → бокс (группа) boxplot
 //
 //  - `selectionKeys` — имена полей кликнутого элемента, которые UI копирует в
 //    ClickContext.selection ПОД ТЕМИ ЖЕ ИМЕНАМИ. Доступные поля фиксированы
 //    по виду элемента:
 //      point  → в timeline: 't', 'v', а также 'series' (имя серии с точкой);
 //               в scatter: 'x', 'y', 'label' (label может отсутствовать —
-//               тогда ключ опускается)
+//               тогда ключ опускается); в map: 'lat', 'lon', 'value', 'label'
 //      row    → любой `key` из columns карточки (значение берётся из row[key];
 //               null-значения в selection не попадают — ключ опускается)
-//      bucket → 'label', 'count'
+//      bucket → 'label', 'count' (в funnel — имя этапа и счётчик на нём)
 //      cell   → 'x', 'y', 'value'
+//      tile   → 'label', 'value', 'group' (group может отсутствовать)
+//      box    → 'label', 'med' (медиана группы)
 //
 //  - `label` — подпись действия для тултипа/меню («Разобраться с этой точкой»).
 //
@@ -74,7 +81,14 @@ export const dateTimeStringSchema = z
 // action:'why' с selection { node: id } — контракт это уже позволяет.
 // ---------------------------------------------------------------------------
 
-export const CLICK_TARGET_ELEMENTS = ["point", "row", "bucket", "cell"] as const;
+export const CLICK_TARGET_ELEMENTS = [
+  "point",
+  "row",
+  "bucket",
+  "cell",
+  "tile",
+  "box",
+] as const;
 
 export const clickTargetSchema = z.strictObject({
   on: z.enum(CLICK_TARGET_ELEMENTS),
@@ -178,6 +192,36 @@ export const mapPointSchema = z.strictObject({
 });
 export type MapPoint = z.infer<typeof mapPointSchema>;
 
+/** Плитка treemap: часть целого. Площадь ∝ value, поэтому value строго > 0. */
+export const treemapItemSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().positive(),
+  /** Группа верхнего уровня — категориальный цвет плитки и легенда. */
+  group: z.string().optional(),
+});
+export type TreemapItem = z.infer<typeof treemapItemSchema>;
+
+/**
+ * Группа boxplot: пять квантилей распределения метрики внутри группы.
+ * Конвенция усов — p05/p95 (SQL-контракт generate-sql.ts), но контракт
+ * требует только монотонность: lo ≤ q1 ≤ med ≤ q3 ≤ hi.
+ */
+export const boxplotGroupSchema = z
+  .strictObject({
+    label: z.string(),
+    /** Нижний ус (обычно p05). */
+    lo: z.number(),
+    q1: z.number(),
+    med: z.number(),
+    q3: z.number(),
+    /** Верхний ус (обычно p95). */
+    hi: z.number(),
+  })
+  .refine((g) => g.lo <= g.q1 && g.q1 <= g.med && g.med <= g.q3 && g.q3 <= g.hi, {
+    message: "квантили обязаны быть монотонны: lo ≤ q1 ≤ med ≤ q3 ≤ hi",
+  });
+export type BoxplotGroup = z.infer<typeof boxplotGroupSchema>;
+
 // ---------------------------------------------------------------------------
 // Варианты ViewSpec
 // ---------------------------------------------------------------------------
@@ -233,6 +277,7 @@ export const graphSpecSchema = z.strictObject({
   edges: z.array(graphEdgeSchema),
   /** Жёсткий cap узлов — защита рендера, см. риски в PLAN.md. */
   maxNodes: z.number().int().positive(),
+  ...cardAnnotationFields,
 });
 export type GraphSpec = z.infer<typeof graphSpecSchema>;
 
@@ -309,13 +354,55 @@ export const mapSpecSchema = z.strictObject({
 });
 export type MapSpec = z.infer<typeof mapSpecSchema>;
 
+/**
+ * Treemap: части целого. Площадь плитки ∝ value; опциональные группы дают
+ * категориальный цвет и легенду. Долю от суммы показанных плиток считает
+ * рендер. Много мелких категорий SQL обязан сворачивать в «прочее» сам.
+ */
+export const treemapSpecSchema = z.strictObject({
+  kind: z.literal("treemap"),
+  title: z.string(),
+  items: z.array(treemapItemSchema).min(1),
+  /** Подпись величины value для тултипа/легенды («выручка», «вопросы»). */
+  valueLabel: z.string().optional(),
+  clicks: z.array(clickTargetSchema),
+  ...cardAnnotationFields,
+});
+export type TreemapSpec = z.infer<typeof treemapSpecSchema>;
+
+/**
+ * Funnel: этапы процесса в порядке прохождения (широкий → узкий). Ширина
+ * полосы ∝ count; проценты переходов между этапами считает рендер.
+ * Этап — тот же Bucket {label, count}, клики — on:'bucket'.
+ */
+export const funnelSpecSchema = z.strictObject({
+  kind: z.literal("funnel"),
+  title: z.string(),
+  stages: z.array(bucketSchema).min(2),
+  clicks: z.array(clickTargetSchema),
+  ...cardAnnotationFields,
+});
+export type FunnelSpec = z.infer<typeof funnelSpecSchema>;
+
+/** Boxplot: сравнение распределений метрики по группам (5 квантилей на бокс). */
+export const boxplotSpecSchema = z.strictObject({
+  kind: z.literal("boxplot"),
+  title: z.string(),
+  /** Подпись метрики на числовой оси («сумма чека», «часы до ответа»). */
+  valueLabel: z.string().optional(),
+  groups: z.array(boxplotGroupSchema).min(1),
+  clicks: z.array(clickTargetSchema),
+  ...cardAnnotationFields,
+});
+export type BoxplotSpec = z.infer<typeof boxplotSpecSchema>;
+
 // ---------------------------------------------------------------------------
 // Дискриминированное объединение
 // ---------------------------------------------------------------------------
 
 /**
  * Схема каждого вида по ключу — для точечной валидации и рендер-реестра.
- * `satisfies Record<ViewKind, …>` гарантирует: ровно восемь видов, без пропусков.
+ * `satisfies Record<ViewKind, …>` гарантирует: все виды на месте, без пропусков.
  */
 export const viewSpecSchemaByKind = {
   timeline: timelineSpecSchema,
@@ -327,6 +414,9 @@ export const viewSpecSchemaByKind = {
   bignumber: bigNumberSpecSchema,
   scatter: scatterSpecSchema,
   map: mapSpecSchema,
+  treemap: treemapSpecSchema,
+  funnel: funnelSpecSchema,
+  boxplot: boxplotSpecSchema,
 } as const satisfies Record<ViewKind, z.ZodType>;
 
 export const viewSpecSchema = z.discriminatedUnion("kind", [
@@ -339,5 +429,8 @@ export const viewSpecSchema = z.discriminatedUnion("kind", [
   bigNumberSpecSchema,
   scatterSpecSchema,
   mapSpecSchema,
+  treemapSpecSchema,
+  funnelSpecSchema,
+  boxplotSpecSchema,
 ]);
 export type ViewSpec = z.infer<typeof viewSpecSchema>;

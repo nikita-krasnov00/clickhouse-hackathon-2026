@@ -7,15 +7,19 @@
  *  - action    = всегда 'why' (v2: дриллы удалены, клик — новый ран агента).
  *
  * Доступные поля элемента фиксированы по виду:
- *   point  → timeline: { t, v, series }; scatter: { x, y, label? }
+ *   point  → timeline: { t, v, series }; scatter: { x, y, label? };
+ *            map: { lat, lon, value?, label? }
  *   row    → ключи columns карточки (значения row[key])
- *   bucket → { label, count }
+ *   bucket → { label, count } (histogram и funnel-этапы)
  *   cell   → { x, y, value }
+ *   tile   → { label, value, group? } (treemap)
+ *   box    → { label, med } (группа boxplot)
  *
  * Чистая функция без React — используется всеми компонентами C4/C5 и
  * проверяется юнит-логикой.
  */
 import type {
+  BoxplotGroup,
   Bucket,
   ClickContext,
   ClickTarget,
@@ -24,6 +28,7 @@ import type {
   Row,
   ScatterPoint,
   SeriesPoint,
+  TreemapItem,
   ViewKind,
 } from "@/lib/contracts";
 
@@ -88,6 +93,16 @@ export function bucketElementFields(bucket: Bucket): ClickableElementFields {
 /** cell → x, y, value. */
 export function cellElementFields(cell: HeatmapCell): ClickableElementFields {
   return { x: cell.x, y: cell.y, value: cell.value };
+}
+
+/** tile → label, value, group (group может отсутствовать — ключ опустится). */
+export function tileElementFields(item: TreemapItem): ClickableElementFields {
+  return { label: item.label, value: item.value, group: item.group };
+}
+
+/** box → label, med (медиана — самое информативное число группы). */
+export function boxElementFields(group: BoxplotGroup): ClickableElementFields {
+  return { label: group.label, med: group.med };
 }
 
 /** Первая клик-цель данного класса элементов, если объявлена в спеке. */

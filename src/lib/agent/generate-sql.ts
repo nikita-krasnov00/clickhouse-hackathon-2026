@@ -22,7 +22,13 @@
  *                           `delta` (число, % к базе), `label`/`detail` (строки);
  *   - kind: 'scatter'     → колонки `x` (число), `y` (число), опц. `label`
  *                           (строка, имя сущности); не больше 500 точек;
- *   - kind: 'graph'       → sql-карточкам запрещён (нет сборки из строк).
+ *   - kind: 'graph'       → колонки `source`, `target` (строки — пара сущностей),
+ *                           опц. `weight` (число); узлы и скоры выводит код;
+ *   - kind: 'treemap'     → колонки `label` (строка), `value` (число > 0),
+ *                           опц. `group` (строка — группа верхнего уровня);
+ *   - kind: 'funnel'      → колонки `label`, `count` в порядке этапов воронки;
+ *   - kind: 'boxplot'     → колонки `label`, `lo`, `q1`, `med`, `q3`, `hi` —
+ *                           пять квантилей метрики на группу (quantiles()).
  *
  * Здесь же: healSql() — починка упавшего SQL по тексту ошибки ClickHouse (B5),
  * summarizeVerdict() — вердикт+уверенность по фактическим агрегатам, и
@@ -64,7 +70,7 @@ export type GeneratedSql = {
   /** Только для scatter: 'log' для величин, разбросанных на порядки. */
   xScale?: "linear" | "log";
   yScale?: "linear" | "log";
-  /** Только для map: подпись величины value (легенда — «посадки», «выручка»). */
+  /** map/treemap/boxplot: подпись величины value («посадки», «выручка»). */
   valueLabel?: string;
 };
 
@@ -123,9 +129,6 @@ const sqlCardSchema = z.object({
 
 function parseSqlCard(raw: unknown): GeneratedSql {
   const parsed = sqlCardSchema.parse(raw);
-  if (parsed.kind === "graph") {
-    throw new Error("kind 'graph' недоступен sql-карточкам — выбери другой kind");
-  }
   return {
     sql: parsed.sql.trim(),
     kind: parsed.kind,
@@ -179,15 +182,18 @@ const SQL_RULES = `## SQL rules (mandatory)
 - bignumber → EXACTLY ONE row; column: value (number). Optional columns: delta (number, % change vs a baseline period, positive = growth), label (string, short caption of what value means), detail (string, secondary context line).
 - scatter   → columns: x (number), y (number); optional label (string, entity name). LIMIT at most 500 points. Return RAW numbers — do NOT log-transform x/y inside the SQL. If a quantity spans orders of magnitude, set "xScale"/"yScale": "log" in your JSON answer and the chart handles the log axis with real tick labels; otherwise omit them (linear). Set "xLabel"/"yLabel" to plain quantity names WITHOUT "(log)". The chart draws the trend line and Pearson r itself — one scatter answers «is there a relationship?».
 - map       → columns: lat (number, -90..90), lon (number, -180..180); optional value (number, aggregated weight → marker size/intensity), label (string, entity name). ONLY when the table really has coordinate columns — never geocode names. AGGREGATE dense coordinates: value is count()/sum()/avg() of the asked metric over GROUP BY round(lat, 3), round(lon, 3); filter out NULL/zero (0, 0) coordinates. BETTER: if the table also has a human-readable place-name column (district/neighborhood/area), GROUP BY that name with avg(lat) AS lat, avg(lon) AS lon and the name as label — named points beat anonymous grid cells. LIMIT at most 1000 points. Also set "valueLabel" (what value means) in your JSON answer.
-- graph     → never available for sql cards.`;
+- graph     → columns: source (string), target (string); optional weight (number > 0, tie strength). ONE row per entity PAIR — aggregate first: SELECT least(a, b) AS source, greatest(a, b) AS target, count() AS weight … GROUP BY source, target ORDER BY weight DESC LIMIT 200 (each undirected pair once; self-pairs are dropped). The pipeline derives nodes, sizes and anomaly scores from weighted degree automatically. Keep pairs meaningful: filter weight ≥ 2 when the raw pair count is huge.
+- treemap   → columns: label (string), value (number > 0); optional group (string, top-level category → tile color/legend). Composition of a whole: value is the size of the part (sum()/count()). AT MOST 40 rows, ORDER BY value DESC; fold the long tail into an «прочее» row in SQL (e.g. rank the parts and GROUP BY if(rank <= 20, name, 'прочее')) so the tiles sum to the TRUE total. Also set "valueLabel" (what value means) in your JSON answer.
+- funnel    → columns: label (string, stage name), count (non-negative number); rows in FUNNEL ORDER, widest stage first, 2–8 rows. Stages of ONE process. For strict per-user event sequences use windowFunnel(window)(timestamp, cond1, cond2, …) per user, then countIf(level >= k) per stage; independent countIf() cascades over statuses are fine too.
+- boxplot   → columns: label (string, group name), lo, q1, med, q3, hi (numbers, ascending quantiles of the metric within the group). Use quantiles(0.05, 0.25, 0.5, 0.75, 0.95)(metric) AS q and project q[1] AS lo, q[2] AS q1, q[3] AS med, q[4] AS q3, q[5] AS hi. 2–15 groups, ORDER BY med DESC. Also set "valueLabel" (the metric name) in your JSON answer.`;
 
 const OUTPUT_FORMAT = `## Output format
 Reply with ONLY ONE strict JSON object — no markdown fences, no explanations, no "cards" wrapper:
-{"sql": "…", "kind": "timeline|leaderboard|histogram|heatmap|verdict|bignumber|scatter|map", "title": "…", "anomalyWindow": ["fromISO", "toISO"], "bucketLabel": "…", "xLabel": "…", "yLabel": "…", "xScale": "log", "yScale": "log", "valueLabel": "…"}
+{"sql": "…", "kind": "timeline|leaderboard|histogram|heatmap|verdict|bignumber|scatter|map|graph|treemap|funnel|boxplot", "title": "…", "anomalyWindow": ["fromISO", "toISO"], "bucketLabel": "…", "xLabel": "…", "yLabel": "…", "xScale": "log", "yScale": "log", "valueLabel": "…"}
 - "kind": KEEP the assigned kind. Change it only when the data genuinely cannot fill that kind — then pick the closest kind that fits.
 - "title": short insight headline in the language of the user's question (start from the assigned title; sharpen it if the data suggests better).
 - "anomalyWindow": optional, timeline only — include it only when the question points at a window you can already name.
-- "bucketLabel": histogram only. "xLabel"/"yLabel"/"xScale"/"yScale": scatter only. "valueLabel": map only.`;
+- "bucketLabel": histogram only. "xLabel"/"yLabel"/"xScale"/"yScale": scatter only. "valueLabel": map, treemap and boxplot.`;
 
 function buildSystemPrompt(): string {
   return [

@@ -105,7 +105,7 @@ function parseTriageAnswer(content: string, catalog: CatalogTable[]): TriageResu
     };
   }
 
-  // proceed: таблицы строго из каталога, карточки без graph, capы жёсткие.
+  // proceed: таблицы строго из каталога, capы жёсткие.
   const known = new Set(catalog.map((t) => t.table));
   const tables = [...new Set(raw.tables ?? [])]
     .map((t) => t.trim())
@@ -117,7 +117,6 @@ function parseTriageAnswer(content: string, catalog: CatalogTable[]): TriageResu
     );
   }
   const cards = (raw.cards ?? [])
-    .filter((c) => c.kind !== "graph")
     .slice(0, MAX_PLAN_CARDS)
     .map((c, i): TriageCard => ({
       cardId: `card-${i + 1}`,
@@ -126,7 +125,7 @@ function parseTriageAnswer(content: string, catalog: CatalogTable[]): TriageResu
       ...(c.hint?.trim() ? { hint: c.hint.trim() } : {}),
     }));
   if (cards.length === 0) {
-    throw new Error('decision "proceed" требует хотя бы одну карточку (kind != graph)');
+    throw new Error('decision "proceed" требует хотя бы одну карточку');
   }
   return { decision: "proceed", tables, cards };
 }
@@ -166,9 +165,12 @@ Rules for "proceed":
   - histogram — distribution of a value across buckets.
   - heatmap — intensity across two categorical/time axes; use it (NOT a multi-series timeline) for hour-of-day × day-of-week, date × category, «динамика по дням и часам», or any «when/at what times» pattern.
   - scatter — relationship between two numeric properties of many entities.
+  - treemap — composition / share of a whole («из чего состоит», «что доминирует», «какая доля»): parts sized by their share. Prefer over leaderboard when shares of the total matter more than exact ranks.
+  - funnel — a staged process with drop-off: conversion, «воронка», «где теряем». Only when the data really carries ordered stages (statuses, event sequences).
+  - boxplot — compare the DISTRIBUTION of one numeric metric across groups (median, quartiles, whiskers): «как отличается X по группам», spread, typical values. Prefer over histogram when there are 2+ groups to compare.
+  - graph — relationships between entity PAIRS: who is linked/co-occurs with whom, clusters around hubs. Only when a pair of entity columns lives in one table (or a self-join makes sense). Not for rankings or time.
   - map — geographic points; ONLY when a chosen table really has coordinate columns (latitude/longitude in degrees). Never geocode place names. When the question is about city districts / neighborhoods / areas / zones / «где …» / «в каких районах …» AND the table has coordinates, ALWAYS include a map card (the asked metric over locations) — pair it with a leaderboard of the named areas when the question also asks «какие/top»; the map shows WHERE, the leaderboard names them.
   - verdict — final judgment with evidence stats; plan it LAST and only when the user asks for a judgment («накручен ли…», «is X suspicious/anomalous?»).
-  - graph — NEVER plan it (cannot be generated from SQL).
 - If a click context is provided (the user clicked an element of a previous card), treat its "selection" values as mandatory filters of the new question.
 
 Reply with ONLY strict JSON, no markdown, no prose:

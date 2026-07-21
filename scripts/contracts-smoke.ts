@@ -111,6 +111,33 @@ expectInvalid("map: точка без lon", {
   ...valid.map.example,
   points: [{ lat: 40.7 }],
 });
+expectInvalid("treemap: value ≤ 0", {
+  ...valid.treemap.example,
+  items: [{ label: "Пустое", value: 0 }],
+});
+expectInvalid("treemap: пустой items", {
+  ...valid.treemap.example,
+  items: [],
+});
+expectInvalid("funnel: один этап (нужно ≥ 2)", {
+  ...valid.funnel.example,
+  stages: [{ label: "Визит", count: 12400 }],
+});
+expectInvalid("funnel: count отрицательный", {
+  ...valid.funnel.example,
+  stages: [
+    { label: "Визит", count: 100 },
+    { label: "Оплата", count: -5 },
+  ],
+});
+expectInvalid("boxplot: квантили немонотонны (med < q1)", {
+  ...valid.boxplot.example,
+  groups: [{ label: "Новые", lo: 4, q1: 11, med: 8, q3: 34, hi: 92 }],
+});
+expectInvalid("boxplot: нет q3", {
+  ...valid.boxplot.example,
+  groups: [{ label: "Новые", lo: 4, q1: 11, med: 18, hi: 92 }],
+});
 expectInvalid("неизвестный kind", { kind: "piechart", title: "t" });
 expectInvalid("строгость: лишний ключ на верхнем уровне", {
   ...valid.verdict.example,

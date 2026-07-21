@@ -36,6 +36,9 @@ const SKELETON_HEIGHT: Record<ViewKind, number> = {
   verdict: 150,
   bignumber: 90,
   map: 300,
+  treemap: 260,
+  funnel: 220,
+  boxplot: 200,
 };
 
 /** Скелет карточки: рамка ViewSpecCard + shimmer-заглушка вместо данных. */

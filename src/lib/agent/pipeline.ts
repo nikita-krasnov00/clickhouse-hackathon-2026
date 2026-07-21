@@ -391,11 +391,187 @@ function buildViewSpec(
         ...note,
       };
     }
-    default:
-      // graph — не собирается из строк SQL; триаж его не планирует.
-      throw new Error(
-        `вид карточки '${generated.kind}' не собирается из SQL-строк — выбери другой kind`,
-      );
+    case "graph": {
+      // Конвенция: пары `source`/`target` (+ опц. `weight`). Узлы, размеры и
+      // скоры аномальности выводятся кодом из взвешенной степени узла.
+      if (rows.length > 500) {
+        throw new Error(
+          `graph-SQL вернул ${rows.length} пар — агрегируй пары (GROUP BY + count() AS weight) и поставь LIMIT 200`,
+        );
+      }
+      // Дедуп ненаправленных пар: weight суммируется, самопетли выбрасываются.
+      const byPair = new Map<string, { source: string; target: string; weight: number }>();
+      for (const row of rows) {
+        requireColumns(row, "graph", ["source", "target"]);
+        const source = String(row.source).trim();
+        const target = String(row.target).trim();
+        if (!source || !target) {
+          throw new Error(
+            "graph-SQL: `source` и `target` обязаны быть непустыми строками (имена сущностей)",
+          );
+        }
+        if (source === target) continue;
+        const weight = row.weight != null ? Number(row.weight) : 1;
+        if (!Number.isFinite(weight) || weight < 0) {
+          throw new Error("graph-SQL: колонка `weight` обязана быть числом ≥ 0 (сила связи)");
+        }
+        const [a, b] = source < target ? [source, target] : [target, source];
+        const key = `${a}\u0000${b}`;
+        const prev = byPair.get(key);
+        if (prev) prev.weight += weight;
+        else byPair.set(key, { source: a, target: b, weight });
+      }
+      const edges = [...byPair.values()];
+      if (edges.length === 0) {
+        throw new Error(
+          "graph-SQL: после выброса самопетель не осталось ни одной пары — верни связи РАЗНЫХ сущностей",
+        );
+      }
+      // Взвешенная степень узла → size (площадь) и score (цвет-«теплота»).
+      const degree = new Map<string, number>();
+      for (const e of edges) {
+        degree.set(e.source, (degree.get(e.source) ?? 0) + e.weight);
+        degree.set(e.target, (degree.get(e.target) ?? 0) + e.weight);
+      }
+      const maxDegree = Math.max(...degree.values(), 1);
+      const nodes = [...degree.entries()].map(([id, deg]) => {
+        const norm = deg / maxDegree;
+        return {
+          id,
+          label: id,
+          score: Math.round(norm * 100) / 100,
+          size: 4 + Math.sqrt(norm) * 28,
+        };
+      });
+      return {
+        kind: "graph",
+        title: generated.title,
+        nodes,
+        edges: edges.map((e) => ({ source: e.source, target: e.target, weight: e.weight })),
+        maxNodes: 50,
+        ...note,
+      };
+    }
+    case "treemap": {
+      // Конвенция: `label`, `value` (> 0), опц. `group`; хвост свёрнут в SQL.
+      if (rows.length > 60) {
+        throw new Error(
+          `treemap-SQL вернул ${rows.length} строк — сверни хвост в «прочее» и поставь LIMIT 40`,
+        );
+      }
+      const items = rows
+        .map((row) => {
+          requireColumns(row, "treemap", ["label", "value"]);
+          const value = Number(row.value);
+          if (!Number.isFinite(value)) {
+            throw new Error("treemap-SQL: колонка `value` обязана быть числом (размер части)");
+          }
+          return {
+            label: String(row.label),
+            value,
+            ...(row.group != null && row.group !== "" ? { group: String(row.group) } : {}),
+          };
+        })
+        .filter((it) => it.value > 0);
+      if (items.length === 0) {
+        throw new Error(
+          "treemap-SQL: все `value` ≤ 0 — площадь плитки строится только из положительных величин",
+        );
+      }
+      const hasGroups = items.some((it) => "group" in it);
+      const clicks: ClickTarget[] = [
+        {
+          on: "tile",
+          selectionKeys: hasGroups ? ["label", "group"] : ["label"],
+          label: "Разобраться с этой частью",
+        },
+      ];
+      return {
+        kind: "treemap",
+        title: generated.title,
+        items,
+        ...(generated.valueLabel ? { valueLabel: generated.valueLabel } : {}),
+        clicks,
+        ...note,
+      };
+    }
+    case "funnel": {
+      // Конвенция: `label`, `count` в порядке этапов (широкий → узкий).
+      if (rows.length < 2) {
+        throw new Error("funnel-SQL обязан вернуть не меньше 2 этапов (строк)");
+      }
+      if (rows.length > 12) {
+        throw new Error(
+          `funnel-SQL вернул ${rows.length} этапов — воронка читаема до ~8, объедини шаги`,
+        );
+      }
+      const stages = rows.map((row) => {
+        requireColumns(row, "funnel", ["label", "count"]);
+        const count = Number(row.count);
+        if (!Number.isFinite(count) || count < 0) {
+          throw new Error("funnel-SQL: колонка `count` обязана быть числом ≥ 0 (счётчик этапа)");
+        }
+        return { label: String(row.label), count: Math.round(count) };
+      });
+      const clicks: ClickTarget[] = [
+        {
+          on: "bucket",
+          selectionKeys: ["label"],
+          label: "Кто отвалился на этом этапе?",
+        },
+      ];
+      return {
+        kind: "funnel",
+        title: generated.title,
+        stages,
+        clicks,
+        ...note,
+      };
+    }
+    case "boxplot": {
+      // Конвенция: `label` + пять восходящих квантилей lo/q1/med/q3/hi на группу.
+      if (rows.length > 30) {
+        throw new Error(
+          `boxplot-SQL вернул ${rows.length} групп — боксплот читаем до ~15, укрупни группы`,
+        );
+      }
+      const groups = rows.map((row) => {
+        requireColumns(row, "boxplot", ["label", "lo", "q1", "med", "q3", "hi"]);
+        const nums = (["lo", "q1", "med", "q3", "hi"] as const).map((k) => Number(row[k]));
+        if (nums.some((n) => !Number.isFinite(n))) {
+          throw new Error(
+            "boxplot-SQL: колонки `lo`, `q1`, `med`, `q3`, `hi` обязаны быть числами (квантили метрики)",
+          );
+        }
+        const [lo, q1, med, q3, hi] = nums;
+        if (!(lo <= q1 && q1 <= med && med <= q3 && q3 <= hi)) {
+          throw new Error(
+            "boxplot-SQL: квантили немонотонны (нужно lo ≤ q1 ≤ med ≤ q3 ≤ hi) — проверь порядок в quantiles(0.05, 0.25, 0.5, 0.75, 0.95)",
+          );
+        }
+        return { label: String(row.label), lo, q1, med, q3, hi };
+      });
+      const clicks: ClickTarget[] = [
+        {
+          on: "box",
+          selectionKeys: ["label"],
+          label: "Разобраться с этой группой",
+        },
+      ];
+      return {
+        kind: "boxplot",
+        title: generated.title,
+        ...(generated.valueLabel ? { valueLabel: generated.valueLabel } : {}),
+        groups,
+        clicks,
+        ...note,
+      };
+    }
+    default: {
+      // Компилятор гарантирует: все виды разобраны выше.
+      const unreachable: never = generated.kind;
+      throw new Error(`неизвестный вид карточки: ${String(unreachable)}`);
+    }
   }
 }
 

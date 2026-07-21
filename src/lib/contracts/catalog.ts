@@ -117,9 +117,9 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
     kind: "graph",
     summary: "Network of related entities (nodes + weighted edges).",
     whenToUse:
-      "The question is about relationships or clusters between entities. Cap the output: keep only the top-scoring nodes and set maxNodes accordingly (50 is a good default).",
+      "The question is about relationships/links between entity PAIRS: who co-occurs with whom, clusters around hubs, communities. The pipeline builds it from pair rows (source, target, weight) — node sizes and anomaly scores are derived from weighted degree automatically.",
     dataShape:
-      "nodes: [{id, label, score? (anomaly 0..1), size?}]; edges: [{source, target, weight?}] referencing node ids; maxNodes: hard cap, required. No clicks field.",
+      "nodes: [{id, label, score? (anomaly 0..1 → color), size?}]; edges: [{source, target, weight?}] referencing node ids; maxNodes: hard cap, required. Node click is built in (selection {node: id}) — no clicks field.",
     example: {
       kind: "graph",
       title: "Кластер связанных сущностей",
@@ -219,6 +219,86 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
           on: "point",
           selectionKeys: ["label", "lat", "lon"],
           label: "Разобраться с этой точкой",
+        },
+      ],
+    },
+  },
+  treemap: {
+    kind: "treemap",
+    summary:
+      "Treemap of a whole: tiles whose area is the share of each part in the total; optional top-level groups give color and legend.",
+    whenToUse:
+      "The question is about composition / share of a whole: «из чего состоит», «что доминирует», «какая доля». Prefer it over leaderboard when the share of the total matters more than exact ranks. Fold the long tail into an «прочее» bucket in SQL so the shown tiles really are the whole.",
+    dataShape:
+      "items: [{label, value > 0, group?: string (top-level group → color/legend)}], ≤ 40 tiles; valueLabel: what value means (tooltip). clicks: on:'tile', selectable fields 'label', 'value', 'group'.",
+    example: {
+      kind: "treemap",
+      title: "Из чего состоит выручка",
+      valueLabel: "выручка",
+      items: [
+        { label: "Ноутбуки", value: 421000, group: "Электроника" },
+        { label: "Смартфоны", value: 388000, group: "Электроника" },
+        { label: "Диваны", value: 154000, group: "Мебель" },
+        { label: "Столы", value: 61000, group: "Мебель" },
+        { label: "Прочее", value: 90000 },
+      ],
+      clicks: [
+        {
+          on: "tile",
+          selectionKeys: ["label"],
+          label: "Разобраться с этой категорией",
+        },
+      ],
+    },
+  },
+  funnel: {
+    kind: "funnel",
+    summary:
+      "Staged funnel: ordered stages with counts; the card computes stage-to-stage and overall conversion itself.",
+    whenToUse:
+      "The question is about a staged process: conversion, drop-off, «где теряем», «какая воронка». Stages go in process order, widest first. Use windowFunnel() for strict event sequences per user/session.",
+    dataShape:
+      "stages: [{label, count}] in funnel order (first = widest), at least 2 stages. clicks: on:'bucket', selectable fields 'label', 'count'.",
+    example: {
+      kind: "funnel",
+      title: "Воронка заказа: визит → оплата",
+      stages: [
+        { label: "Визит", count: 12400 },
+        { label: "Корзина", count: 3100 },
+        { label: "Оформление", count: 1450 },
+        { label: "Оплата", count: 1180 },
+      ],
+      clicks: [
+        {
+          on: "bucket",
+          selectionKeys: ["label"],
+          label: "Кто отвалился на этом этапе?",
+        },
+      ],
+    },
+  },
+  boxplot: {
+    kind: "boxplot",
+    summary:
+      "Box plots comparing the distribution of one numeric metric across groups: median, quartile box, p05–p95 whiskers.",
+    whenToUse:
+      "The question compares HOW a numeric metric is distributed across groups: «как отличается чек по сегментам», spread, skew, outliers. One quantiles() row per group is cheap in ClickHouse. Prefer it over histogram when there are 2+ groups to compare.",
+    dataShape:
+      "groups: [{label, lo, q1, med, q3, hi}] — five ascending quantiles per group (lo/hi are the p05/p95 whiskers), ≤ 20 groups; valueLabel: metric name for the axis. clicks: on:'box', selectable fields 'label', 'med'.",
+    example: {
+      kind: "boxplot",
+      title: "Размер чека по сегментам покупателей",
+      valueLabel: "сумма чека",
+      groups: [
+        { label: "Новые", lo: 4, q1: 11, med: 18, q3: 34, hi: 92 },
+        { label: "Постоянные", lo: 9, q1: 24, med: 41, q3: 78, hi: 210 },
+        { label: "Оптовые", lo: 120, q1: 340, med: 610, q3: 980, hi: 2400 },
+      ],
+      clicks: [
+        {
+          on: "box",
+          selectionKeys: ["label"],
+          label: "Разобраться с этим сегментом",
         },
       ],
     },
