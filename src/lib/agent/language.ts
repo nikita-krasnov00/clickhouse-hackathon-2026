@@ -1,5 +1,5 @@
 /**
- * Agent answer language.
+ * Agent answer language directive.
  *
  * Previously every pipeline step (triage, SQL generation, annotation, verdict)
  * re-decided the language on its own via a soft "in the language of the
@@ -9,19 +9,12 @@
  * «докажи», «воронка», «прочее») and the fast triage model drifted to their
  * language, emitting Russian titles that the rest of the board then inherited.
  *
- * Fix: decide the language ONCE, deterministically from the question text, and
- * hard-pin it on every LLM call via a dedicated directive that explicitly tells
- * the model to ignore the language of the examples in the instructions. UI
- * locale is intentionally not mixed in — by product design the source of truth
- * is the question itself (see catalog.ts).
+ * Fix: decide the language ONCE, deterministically from the question text
+ * (detectAnswerLanguage, shared via @/lib/contracts), and hard-pin it on every
+ * LLM call via a dedicated directive that explicitly tells the model to ignore
+ * the language of the examples in the instructions.
  */
-
-export type AnswerLanguage = "Russian" | "English";
-
-/** Cyrillic in the question → Russian, otherwise English. */
-export function detectAnswerLanguage(question: string): AnswerLanguage {
-  return /[Ѐ-ӿ]/.test(question) ? "Russian" : "English";
-}
+import { detectAnswerLanguage } from "@/lib/contracts";
 
 /**
  * Strict language directive for the system prompt. Overrides any downstream

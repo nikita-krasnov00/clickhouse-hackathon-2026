@@ -5,7 +5,8 @@
  *   - view-spec.ts — ViewSpec (все виды карточек) + ClickTarget + примитивы;
  *   - click.ts     — ClickContext: что уходит из UI при клике;
  *   - api.ts       — /api/ask, /api/suggest, RunStep (Realtime-прогресс);
- *   - catalog.ts   — VIEW_SPEC_CATALOG для промпта text-to-SQL (B4).
+ *   - catalog.ts   — VIEW_SPEC_CATALOG для промпта text-to-SQL (B4);
+ *   - language.ts  — язык рана (detectAnswerLanguage) для ответа и ризонинга.
  *
  * Экспортируются и Zod-схемы (валидация: выход LLM, тела запросов), и
  * выведенные типы (z.infer) для кода. Проверка: `npm run contracts:smoke`.
@@ -15,3 +16,4 @@ export * from "./view-spec";
 export * from "./click";
 export * from "./api";
 export * from "./catalog";
+export * from "./language";

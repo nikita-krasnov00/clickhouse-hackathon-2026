@@ -10,16 +10,18 @@
  * тот же путь, что и у чипов-примеров в композере) — available это уже готовые
  * вопросы, а не уточнение, поэтому текст уходит как есть, без склейки.
  */
-import { RUN_STEP_LABELS, type RunStep } from "@/lib/contracts";
+import { runStepLabel, type AnswerLanguage, type RunStep } from "@/lib/contracts";
 
 type ImpossibleStep = Extract<RunStep, { step: "impossible" }>;
 
 export function ImpossibleCard({
   step,
   onAsk,
+  language,
 }: {
   step: ImpossibleStep;
   onAsk?: (question: string) => void;
+  language: AnswerLanguage;
 }) {
   return (
     <div
@@ -27,14 +29,16 @@ export function ImpossibleCard({
       style={{ borderColor: "var(--viz-anomaly-edge)" }}
     >
       <p className="text-xs font-medium tracking-wide uppercase" style={{ color: "var(--viz-warning)" }}>
-        {RUN_STEP_LABELS.impossible}
+        {runStepLabel("impossible", language)}
       </p>
       <p className="mt-1 text-sm leading-relaxed font-medium">{step.reason}</p>
 
       {step.available && step.available.length > 0 && (
         <>
           <p className="mt-2.5 text-xs text-muted">
-            А вот что по этим данным спросить можно:
+            {language === "Russian"
+              ? "А вот что по этим данным спросить можно:"
+              : "But here's what you can ask about this data:"}
           </p>
           <div className="mt-1.5 flex flex-wrap gap-2">
             {step.available.map((q) => (

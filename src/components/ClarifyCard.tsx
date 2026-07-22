@@ -11,7 +11,7 @@
  * без ClickContext — это обычный вопрос, не клик по элементу карточки.
  */
 import { useState } from "react";
-import { RUN_STEP_LABELS, type RunStep } from "@/lib/contracts";
+import { runStepLabel, type AnswerLanguage, type RunStep } from "@/lib/contracts";
 
 type ClarifyStep = Extract<RunStep, { step: "clarify" }>;
 
@@ -19,18 +19,21 @@ export function ClarifyCard({
   step,
   originalQuestion,
   onAsk,
+  language,
 }: {
   step: ClarifyStep;
   /** Вопрос расследования, к которому агент просит уточнение. */
   originalQuestion: string;
   onAsk?: (question: string) => void;
+  language: AnswerLanguage;
 }) {
   const [answer, setAnswer] = useState("");
+  const ru = language === "Russian";
 
   const ask = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed || !onAsk) return;
-    onAsk(`${originalQuestion}\n\nУточнение: ${trimmed}`);
+    onAsk(`${originalQuestion}\n\n${ru ? "Уточнение" : "Clarification"}: ${trimmed}`);
   };
 
   return (
@@ -39,7 +42,7 @@ export function ClarifyCard({
       style={{ boxShadow: "0 0 24px rgba(242,176,53,0.06)" }}
     >
       <p className="text-xs font-medium tracking-wide text-accent uppercase">
-        {RUN_STEP_LABELS.clarify}
+        {runStepLabel("clarify", language)}
       </p>
       <p className="mt-1 text-sm leading-relaxed font-medium">{step.question}</p>
 
@@ -71,7 +74,7 @@ export function ClarifyCard({
           type="text"
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
-          placeholder="Свой ответ…"
+          placeholder={ru ? "Свой ответ…" : "Your answer…"}
           className="flex-1 rounded-lg border border-border bg-transparent px-2.5 py-1.5 text-xs outline-none placeholder:text-muted focus:border-accent/50"
         />
         <button
@@ -79,7 +82,7 @@ export function ClarifyCard({
           disabled={!answer.trim() || !onAsk}
           className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-background transition-opacity disabled:opacity-50"
         >
-          Ответить
+          {ru ? "Ответить" : "Answer"}
         </button>
       </form>
     </div>
