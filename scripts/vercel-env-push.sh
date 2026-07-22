@@ -2,10 +2,12 @@
 # Заливка прикладных переменных окружения в Vercel (production) из локального .env.
 # Требования: авторизованный CLI (npx vercel login) и привязанный проект (npx vercel link).
 #
-# TRIGGER_SECRET_KEY — отдельный случай: в .env лежит DEV-ключ (tr_dev_…), а на
-# Vercel нужен PROD-ключ (tr_prod_…, дашборд Trigger.dev → API Keys). Поэтому он
-# передаётся явно, чтобы dev-ключ не утёк в прод:
-#   TRIGGER_SECRET_KEY_PROD=tr_prod_… scripts/vercel-env-push.sh
+# TRIGGER_SECRET_KEY — отдельный случай: в TRIGGER_SECRET_KEY в .env лежит
+# DEV-ключ (tr_dev_…), а на Vercel нужен PROD-ключ (tr_prod_…, дашборд
+# Trigger.dev → API Keys). Поэтому prod-ключ живёт под своим именем
+# TRIGGER_SECRET_KEY_PROD — строкой в .env либо переменной окружения запуска
+# (окружение приоритетнее). Значение не с префиксом tr_prod_ отбрасывается:
+# dev-ключ в прод не утечёт.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -40,9 +42,13 @@ for name in CLICKHOUSE_URL AGENT_RO_USER AGENT_RO_PASSWORD \
   push "$name" "$(env_get "$name")"
 done
 
-if [[ -n "${TRIGGER_SECRET_KEY_PROD:-}" ]]; then
-  push TRIGGER_SECRET_KEY "$TRIGGER_SECRET_KEY_PROD"
+secret_prod="${TRIGGER_SECRET_KEY_PROD:-$(env_get TRIGGER_SECRET_KEY_PROD)}"
+if [[ -z "$secret_prod" ]]; then
+  echo "! TRIGGER_SECRET_KEY не залит. Возьмите tr_prod_… (дашборд Trigger.dev → API Keys),"
+  echo "  добавьте в .env строку TRIGGER_SECRET_KEY_PROD=tr_prod_… и повторите запуск"
+elif [[ "$secret_prod" != tr_prod_* ]]; then
+  echo "! TRIGGER_SECRET_KEY_PROD не похож на prod-ключ (ожидается tr_prod_…) — пропуск,"
+  echo "  чтобы dev-ключ не попал в прод"
 else
-  echo "! TRIGGER_SECRET_KEY не задан. Возьмите tr_prod_… (дашборд Trigger.dev → API Keys)"
-  echo "  и повторите: TRIGGER_SECRET_KEY_PROD=tr_prod_… scripts/vercel-env-push.sh"
+  push TRIGGER_SECRET_KEY "$secret_prod"
 fi

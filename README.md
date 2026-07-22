@@ -90,14 +90,15 @@ npm run deploy:trigger           # собирает и заливает src/trig
 ```bash
 npx vercel login                 # один раз
 npx vercel link                  # привязать директорию к проекту (один раз)
-TRIGGER_SECRET_KEY_PROD=tr_prod_… npm run vercel:env   # залить env из .env в production
+npm run vercel:env               # залить переменные из .env в production
 npx vercel deploy --prod
 ```
 
-`vercel:env` (scripts/vercel-env-push.sh) заливает переменные ClickHouse + LLM +
-Auth (Google OAuth) из `.env`; `TRIGGER_SECRET_KEY_PROD` — **prod**-ключ Trigger.dev
-(`tr_prod_…`, дашборд → API Keys), передаётся отдельно, чтобы dev-ключ из `.env`
-не попал в прод. Не забудьте прод-домен в Authorized redirect URIs OAuth-клиента
+`vercel:env` (scripts/vercel-env-push.sh) заливает из `.env` переменные ClickHouse +
+LLM + Auth (Google OAuth) и `TRIGGER_SECRET_KEY_PROD` — **prod**-ключ Trigger.dev
+(`tr_prod_…`, дашборд → API Keys; см. .env.example). Ключ живёт под отдельным
+именем и валидируется по префиксу, чтобы dev-ключ из `TRIGGER_SECRET_KEY` не попал
+в прод. Не забудьте прод-домен в Authorized redirect URIs OAuth-клиента
 (раздел «Google OAuth» выше).
 
 После деплоя проверить публичную ссылку со свежего устройства (задача J4).
