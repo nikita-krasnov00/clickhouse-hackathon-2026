@@ -11,11 +11,15 @@ import { useLocale, useTranslations } from "next-intl";
 import { LOCALES, type Locale } from "@/lib/i18n/locale";
 import { setLocale } from "@/lib/i18n/set-locale";
 
-/** Короткие ярлыки кнопок — самоназвание языка, всегда в его собственной графике. */
+/**
+ * Короткие ярлыки кнопок — двухбуквенный код латиницей (как EN/RU, не «РУ»).
+ * Единая графика важнее самоназвания: греческое «ΕΛ» рендерилось из
+ * фолбэк-шрифта (в Geist Mono нет greek-subset) и выглядело крупнее остальных.
+ */
 const LOCALE_LABELS: Record<Locale, string> = {
   en: "EN",
   ru: "RU",
-  el: "ΕΛ",
+  el: "EL",
 };
 
 export function LocaleSwitcher() {
