@@ -11,7 +11,7 @@
     "contracts:smoke": "tsx scripts/contracts-smoke.ts",
     "explore:schema": "tsx --env-file=.env scripts/explore-schema.ts",
     "investigate:smoke": "tsx --env-file=.env scripts/investigate-smoke.ts",
-    "deploy:trigger": "trigger.dev deploy",
+    "deploy:trigger": "trigger deploy",
     "vercel:env": "bash scripts/vercel-env-push.sh",
     "heal:smoke": "tsx --env-file=.env scripts/heal-smoke.ts",
     "llm:log": "tsx --env-file=.env scripts/llm-log-tail.ts"
@@ -28,14 +28,14 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@trigger.dev/build": "^4.5.5",
+    "@trigger.dev/build": "4.5.5",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
-    "trigger.dev": "^4.5.5",
+    "trigger.dev": "4.5.5",
     "tsx": "^4.23.1",
     "typescript": "^5"
   }

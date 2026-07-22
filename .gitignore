@@ -35,3 +35,5 @@ yarn-error.log*
 .DS_Store
 *.pem
 db/.a2_locks/
+.vercel
+.env.local
