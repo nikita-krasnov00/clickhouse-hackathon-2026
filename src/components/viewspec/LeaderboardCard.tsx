@@ -6,19 +6,19 @@
  * null-значения рендерятся как «—»; числа — вправо, tabular-nums.
  */
 import { useMemo, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import type { ClickContext, LeaderboardSpec, Row } from "@/lib/contracts";
+import { useNumberFormat } from "@/lib/i18n/formats";
 import { buildClickContext, findClickTarget, rowElementFields } from "./click";
-
-const numFmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 
 type Sort = { key: string; dir: "asc" | "desc" } | null;
 
-function compareValues(a: Row[string], b: Row[string]): number {
+function compareValues(a: Row[string], b: Row[string], locale: string): number {
   if (a === null && b === null) return 0;
   if (a === null) return 1; // null — всегда вниз
   if (b === null) return -1;
   if (typeof a === "number" && typeof b === "number") return a - b;
-  return String(a).localeCompare(String(b), "ru");
+  return String(a).localeCompare(String(b), locale);
 }
 
 export function LeaderboardCard({
@@ -30,6 +30,10 @@ export function LeaderboardCard({
   cardId: string;
   onClickContext?: (ctx: ClickContext) => void;
 }) {
+  const t = useTranslations("leaderboard");
+  const tCards = useTranslations("cards");
+  const locale = useLocale();
+  const numFmt = useNumberFormat({ maximumFractionDigits: 2 });
   const [sort, setSort] = useState<Sort>(null);
   const rowTarget = findClickTarget(spec.clicks, "row");
   const clickable = Boolean(rowTarget && onClickContext);
@@ -37,11 +41,11 @@ export function LeaderboardCard({
   const rows = useMemo(() => {
     if (!sort) return spec.rows;
     const sorted = [...spec.rows].sort((a, b) =>
-      compareValues(a[sort.key], b[sort.key]),
+      compareValues(a[sort.key], b[sort.key], locale),
     );
     if (sort.dir === "desc") sorted.reverse();
     return sorted;
-  }, [spec.rows, sort]);
+  }, [spec.rows, sort, locale]);
 
   const toggleSort = (key: string) => {
     setSort((prev) =>
@@ -77,7 +81,7 @@ export function LeaderboardCard({
 
   if (spec.rows.length === 0) {
     return (
-      <p className="px-1 py-6 text-center text-sm text-muted">Нет данных</p>
+      <p className="px-1 py-6 text-center text-sm text-muted">{tCards("noData")}</p>
     );
   }
 
@@ -106,7 +110,7 @@ export function LeaderboardCard({
                   <button
                     type="button"
                     onClick={() => toggleSort(col.key)}
-                    title="Сортировать"
+                    title={t("sort")}
                     className={`inline-flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-border/60 hover:text-foreground ${
                       active ? "text-foreground" : "text-muted"
                     }`}
@@ -162,7 +166,7 @@ export function LeaderboardCard({
       </table>
       {clickable && rowTarget?.label && (
         <p className="mt-2 px-1 text-[11px] text-muted">
-          Клик по строке — {rowTarget.label.toLowerCase()}
+          {t("rowClickHint", { label: rowTarget.label.toLowerCase() })}
         </p>
       )}
     </div>

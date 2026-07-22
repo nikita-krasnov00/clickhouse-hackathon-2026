@@ -11,7 +11,9 @@
  * (этап и есть Bucket {label, count}).
  */
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { ClickContext, FunnelSpec } from "@/lib/contracts";
+import { useNumberFormat } from "@/lib/i18n/formats";
 import { bucketElementFields, buildClickContext, findClickTarget } from "./click";
 
 const VB_W = 640;
@@ -24,15 +26,6 @@ const SIDE = 118;
 /** Минимальная видимая ширина полосы — нулевой этап не исчезает. */
 const MIN_W = 3;
 
-const numFmt = new Intl.NumberFormat("ru-RU");
-
-/** Процент: < 10 → одна десятая, иначе целые («9,5%», «47%»). */
-function fmtPct(ratio: number): string {
-  const pct = ratio * 100;
-  const s = pct > 0 && pct < 10 ? +pct.toFixed(1) : Math.round(pct);
-  return `${numFmt.format(s)}%`;
-}
-
 export function FunnelCard({
   spec,
   cardId,
@@ -42,9 +35,19 @@ export function FunnelCard({
   cardId: string;
   onClickContext?: (ctx: ClickContext) => void;
 }) {
+  const t = useTranslations("funnel");
+  const tCards = useTranslations("cards");
+  const numFmt = useNumberFormat();
   const [hover, setHover] = useState<number | null>(null);
   const bucketTarget = findClickTarget(spec.clicks, "bucket");
   const clickable = Boolean(bucketTarget && onClickContext);
+
+  /** Процент: < 10 → одна десятая, иначе целые («9,5%», «47%»). */
+  const fmtPct = (ratio: number): string => {
+    const pct = ratio * 100;
+    const s = pct > 0 && pct < 10 ? +pct.toFixed(1) : Math.round(pct);
+    return `${numFmt.format(s)}%`;
+  };
 
   const layout = useMemo(() => {
     if (spec.stages.length < 2) return null;
@@ -72,7 +75,7 @@ export function FunnelCard({
   }, [spec.stages]);
 
   if (!layout) {
-    return <p className="px-1 py-6 text-center text-sm text-muted">Нет данных</p>;
+    return <p className="px-1 py-6 text-center text-sm text-muted">{tCards("noData")}</p>;
   }
   const { rows, vbH, overall } = layout;
   const first = spec.stages[0];
@@ -201,11 +204,14 @@ export function FunnelCard({
       {/* Сквозная конверсия воронки */}
       {overall !== null && (
         <p className="mt-2 text-[11px] text-muted">
-          Сквозная конверсия:{" "}
+          {t("overallLabel")}{" "}
           <span className="font-semibold text-foreground">{fmtPct(overall)}</span>{" "}
-          — {numFmt.format(last.count)} из {numFmt.format(first.count)} ({first.label}
-          {" → "}
-          {last.label})
+          {t("overallDetail", {
+            last: numFmt.format(last.count),
+            first: numFmt.format(first.count),
+            firstLabel: first.label,
+            lastLabel: last.label,
+          })}
         </p>
       )}
 
@@ -224,7 +230,9 @@ export function FunnelCard({
           </div>
           <div className="text-xs whitespace-nowrap text-muted">
             {hovered.stage.label}
-            {hover > 0 ? ` · ${fmtPct(hovered.ofFirst)} от «${first.label}»` : ""}
+            {hover > 0
+              ? ` · ${t("ofFirst", { pct: fmtPct(hovered.ofFirst), label: first.label })}`
+              : ""}
           </div>
           {clickable && bucketTarget?.label && (
             <div className="mt-0.5 text-[10px] whitespace-nowrap text-accent">

@@ -11,7 +11,8 @@
  * без ClickContext — это обычный вопрос, не клик по элементу карточки.
  */
 import { useState } from "react";
-import { RUN_STEP_LABELS, type RunStep } from "@/lib/contracts";
+import { useTranslations } from "next-intl";
+import type { RunStep } from "@/lib/contracts";
 
 type ClarifyStep = Extract<RunStep, { step: "clarify" }>;
 
@@ -25,12 +26,14 @@ export function ClarifyCard({
   originalQuestion: string;
   onAsk?: (question: string) => void;
 }) {
+  const t = useTranslations("clarify");
+  const tSteps = useTranslations("steps");
   const [answer, setAnswer] = useState("");
 
   const ask = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed || !onAsk) return;
-    onAsk(`${originalQuestion}\n\nУточнение: ${trimmed}`);
+    onAsk(t("followUp", { question: originalQuestion, answer: trimmed }));
   };
 
   return (
@@ -39,7 +42,7 @@ export function ClarifyCard({
       style={{ boxShadow: "0 0 24px rgba(242,176,53,0.06)" }}
     >
       <p className="text-xs font-medium tracking-wide text-accent uppercase">
-        {RUN_STEP_LABELS.clarify}
+        {tSteps("clarify")}
       </p>
       <p className="mt-1 text-sm leading-relaxed font-medium">{step.question}</p>
 
@@ -71,7 +74,7 @@ export function ClarifyCard({
           type="text"
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
-          placeholder="Свой ответ…"
+          placeholder={t("placeholder")}
           className="flex-1 rounded-lg border border-border bg-transparent px-2.5 py-1.5 text-xs outline-none placeholder:text-muted focus:border-accent/50"
         />
         <button
@@ -79,7 +82,7 @@ export function ClarifyCard({
           disabled={!answer.trim() || !onAsk}
           className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-background transition-opacity disabled:opacity-50"
         >
-          Ответить
+          {t("submit")}
         </button>
       </form>
     </div>

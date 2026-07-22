@@ -10,6 +10,8 @@ import type {
 } from "next/server";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { apiMessage } from "@/lib/i18n/api-messages";
+import { LOCALE_COOKIE, negotiateLocale } from "@/lib/i18n/locale";
 
 // Обёртка auth() читает JWT-cookie и кладёт сессию в req.auth.
 // Три обхода поверх канонного `export default auth(…)` (next-auth beta.32,
@@ -24,8 +26,12 @@ const gate = auth((req) => {
 
   const { nextUrl } = req;
   if (nextUrl.pathname.startsWith("/api/")) {
+    const locale = negotiateLocale(
+      req.cookies.get(LOCALE_COOKIE)?.value,
+      req.headers.get("accept-language"),
+    );
     return NextResponse.json(
-      { error: "Не авторизован — войдите через Google" },
+      { error: apiMessage(locale, "unauthorized") },
       { status: 401 },
     );
   }

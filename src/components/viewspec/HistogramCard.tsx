@@ -10,7 +10,9 @@
  * семантике ClickTarget on:'bucket' (selectionKeys из label/count).
  */
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { ClickContext, HistogramSpec } from "@/lib/contracts";
+import { useNumberFormat } from "@/lib/i18n/formats";
 import { bucketElementFields, buildClickContext, findClickTarget } from "./click";
 
 const VB_W = 640;
@@ -18,8 +20,6 @@ const VB_H = 260;
 const M = { top: 22, right: 8, bottom: 48, left: 48 };
 const BAR_W = 24; // cap толщины бара — «тонкие марки», воздух в полосе
 const CAP_R = 4; // скругление данных-конца (верх), основание квадратное
-
-const numFmt = new Intl.NumberFormat("ru-RU");
 
 /** «Красивый» шаг оси значений: 1/2/5 × 10^n (как в TimelineCard). */
 function niceStep(rough: number): number {
@@ -52,6 +52,8 @@ export function HistogramCard({
   cardId: string;
   onClickContext?: (ctx: ClickContext) => void;
 }) {
+  const tCards = useTranslations("cards");
+  const numFmt = useNumberFormat();
   const [hover, setHover] = useState<number | null>(null);
   const bucketTarget = findClickTarget(spec.clicks, "bucket");
   const clickable = Boolean(bucketTarget && onClickContext);
@@ -79,7 +81,7 @@ export function HistogramCard({
 
   if (!layout) {
     return (
-      <p className="px-1 py-6 text-center text-sm text-muted">Нет данных</p>
+      <p className="px-1 py-6 text-center text-sm text-muted">{tCards("noData")}</p>
     );
   }
   const { band, y, yTicks, maxIdx } = layout;

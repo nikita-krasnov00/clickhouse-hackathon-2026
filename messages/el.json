@@ -1,0 +1,160 @@
+{
+  "meta": {
+    "description": "Σταθμός εργασίας του χειριστή της πλατφόρμας: ο πράκτορας εξερευνά τα δεδομένα στο ClickHouse και συνθέτει διαδραστικές κάρτες-διερευνήσεις"
+  },
+  "common": {
+    "verdictTitle": "Ετυμηγορία της διερεύνησης"
+  },
+  "localeSwitcher": {
+    "label": "Γλώσσα"
+  },
+  "home": {
+    "tagline": "ζωντανός SQL-πράκτορας · ClickHouse + Trigger.dev"
+  },
+  "auth": {
+    "signOut": "Αποσύνδεση"
+  },
+  "login": {
+    "intro": "Σταθμός εργασίας του χειριστή της πλατφόρμας. Είσοδος με λογαριασμό Google — ο πράκτορας και τα δεδομένα δεν πρέπει να είναι διαθέσιμα ανώνυμα.",
+    "accessDenied": "Αυτός ο λογαριασμός δεν επιτρέπεται να συνδεθεί. Ζητήστε να προστεθεί το email σας στο AUTH_ALLOWED_EMAILS.",
+    "failed": "Η σύνδεση απέτυχε ({error}). Δοκιμάστε ξανά.",
+    "googleButton": "Σύνδεση μέσω Google"
+  },
+  "workbench": {
+    "composerAria": "Πεδίο ερώτησης",
+    "placeholder": "Ρωτήστε για τα δεδομένα στο ClickHouse — ο πράκτορας θα βρει μόνος του τους σωστούς πίνακες",
+    "ask": "Ρώτησε",
+    "feedAria": "Ροή διερεύνησης",
+    "emptyIntro": "Κάντε μια ερώτηση για τα δεδομένα στο ClickHouse — ο πράκτορας θα εξερευνήσει το σχήμα, θα διαλέξει πίνακες, θα γράψει SQL και θα επιστρέψει διαδραστικές κάρτες. Τα κλικ σε σημεία, γραμμές και κελιά ανοίγουν το επόμενο επίπεδο.",
+    "startWithExample": "Ξεκινήστε με ένα παράδειγμα:",
+    "askFailed": "Δεν ήταν δυνατή η εκκίνηση της εκτέλεσης: {message}",
+    "contractError": "Η απάντηση του /api/ask δεν αντιστοιχεί στο συμβόλαιο askResponseSchema",
+    "whyQuestion": "Γιατί; Ανάλυσέ το περισσότερο: {selection} (κλικ στην κάρτα «{title}»)"
+  },
+  "run": {
+    "connecting": "εκκίνηση",
+    "running": "διερευνώ",
+    "done": "έτοιμο",
+    "failed": "απέτυχε",
+    "elapsed": "{seconds} δευτ.",
+    "howIDidIt": "Πώς το έκανα — {count, plural, one {# βήμα} other {# βήματα}} · {seconds} δευτ.",
+    "failedTitle": "Δεν κατάφερα να ολοκληρώσω τη διερεύνηση",
+    "failedDefault": "Η εκτέλεση κατέληξε σε αποτυχία.",
+    "failedStatus": "Η εκτέλεση ολοκληρώθηκε με κατάσταση {status}",
+    "attempt": "προσπάθεια {attempt}/3",
+    "startingPipeline": "Εκκινώ τη διαδικασία"
+  },
+  "steps": {
+    "exploring": "Μελετώ το σχήμα",
+    "generating_sql": "Σχεδιάζω τα ερωτήματα",
+    "board_planned": "Πλάνο του πίνακα",
+    "clarify": "Χρειάζεται διευκρίνιση",
+    "impossible": "Δεν επαρκούν τα δεδομένα",
+    "reviewing": "Ελέγχω το ερώτημα",
+    "executing": "Εκτελώ",
+    "healing": "Διορθώνω το ερώτημα",
+    "materializing": "Υλοποιώ τομή δεδομένων",
+    "card_ready": "Η κάρτα είναι έτοιμη",
+    "card_failed": "Η κάρτα απέτυχε",
+    "done": "Έτοιμο",
+    "error": "Σφάλμα"
+  },
+  "clarify": {
+    "placeholder": "Η απάντησή σας…",
+    "submit": "Απάντηση",
+    "followUp": "{question}\n\nΔιευκρίνιση: {answer}"
+  },
+  "impossible": {
+    "available": "Να τι μπορείτε να ρωτήσετε με αυτά τα δεδομένα:"
+  },
+  "cards": {
+    "noData": "Δεν υπάρχουν δεδομένα",
+    "noPoints": "Δεν υπάρχουν σημεία για εμφάνιση",
+    "fallbackTitle": "Δεν μπόρεσα να σχεδιάσω την κάρτα",
+    "fallbackKindUnknown": "άγνωστο",
+    "fallbackBody": "Το spec δεν πέρασε την επικύρωση του συμβολαίου view-spec. Αυτή είναι εφεδρική προβολή, όχι κενή οθόνη — τα ακατέργαστα δεδομένα παρακάτω.",
+    "details": "Λεπτομέρειες",
+    "insight": "Συμπέρασμα:",
+    "metric": "Μετρική:"
+  },
+  "confidence": {
+    "low": "χαμηλή βεβαιότητα",
+    "medium": "μέτρια βεβαιότητα",
+    "high": "υψηλή βεβαιότητα"
+  },
+  "bignumber": {
+    "deltaTitle": "Μεταβολή σε σχέση με τη βάση σύγκρισης, %"
+  },
+  "leaderboard": {
+    "sort": "Ταξινόμηση",
+    "rowClickHint": "Κλικ σε γραμμή — {label}"
+  },
+  "heatmap": {
+    "cellClickHint": "Κλικ σε κελί — {label}"
+  },
+  "timeline": {
+    "anomalyZone": "ζώνη ανωμαλίας",
+    "reset": "επαναφορά",
+    "hiddenSeries": "εμφανίζονται {shown, plural, one {# σειρά} other {# σειρές}} από {total} (κατά όγκο)· για την πλήρη εικόνα δύο διαστάσεων ταιριάζει καλύτερα ένα heatmap",
+    "markersHidden": "τα σημεία κρύβονται σε πυκνή σειρά — κάντε ζουμ για λεπτομέρειες",
+    "howTo": "σύρετε πάνω στο γράφημα — ζουμ σε εύρος · pinch/Ctrl+ροδέλα — ζουμ · Shift+ροδέλα — μετατόπιση · διπλό κλικ — επαναφορά"
+  },
+  "scatter": {
+    "noTrend": "πολύ λίγα σημεία για γραμμή τάσης",
+    "points": "{count, plural, one {# σημείο} other {# σημεία}}",
+    "logScaleNote": "λογαριθμική κλίμακα",
+    "axisLog": "(log)",
+    "noCorrelation": "σχεδόν καμία συσχέτιση",
+    "correlation": "{strength, select, strong {ισχυρή} moderate {μέτρια} weak {ασθενής} other {}} {direction, select, direct {θετική} inverse {αρνητική} other {}} συσχέτιση",
+    "ariaWithTrend": "{title}. Συσχέτιση r={r}, {description}",
+    "howTo": "κάθε σημείο είναι μία οντότητα{hasLabels, select, yes { (περάστε τον δείκτη — όνομα και ακριβείς τιμές)} other {}}· η διακεκομμένη είναι η γραμμή τάσης: κλίση προς τα πάνω ↗ = θετική σχέση, προς τα κάτω ↘ = αρνητική, επίπεδη = καμία σχέση"
+  },
+  "map": {
+    "valueFallback": "τιμή",
+    "noValues": "σημεία χωρίς τιμή",
+    "points": "{count, plural, one {# σημείο} other {# σημεία}}",
+    "clusters": "{count, plural, one {# συστάδα} other {# συστάδες}}",
+    "ariaBase": "{title}. Χάρτης: {points}",
+    "ariaRange": ", {label} από {min} έως {max}",
+    "zoomIn": "Μεγέθυνση",
+    "zoomOut": "Σμίκρυνση",
+    "resetView": "Επαναφορά προβολής στην έκταση των δεδομένων",
+    "nearby": "{count, plural, one {# σημείο} other {# σημεία}} κοντά",
+    "valueSum": "{label} (άθροισμα)",
+    "drillCluster": "Σκάψε σε αυτή τη συστάδα",
+    "howToClustered": "κάθε δείκτης είναι ένα μέρος στον χάρτη· τα κοντινά σημεία συγχωνεύονται, ο αριθμός μέσα δείχνει πόσα είναι",
+    "howToEach": "κάθε σημείο είναι ένα μέρος στον χάρτη",
+    "howToValue": "· εμβαδόν και φωτεινότητα — {label}",
+    "howToValueClusterSuffix": " (άθροισμα στη συστάδα)",
+    "howToClick": "· το κλικ σκάβει βαθύτερα",
+    "howToNav": "· ζουμ — κουμπιά ή pinch/Ctrl+ροδέλα, μετατόπιση — σύρσιμο, διπλό κλικ — επαναφορά",
+    "attribution": " · υπόβαθρο © ",
+    "offline": " · το υπόβαθρο δεν είναι διαθέσιμο — εμφανίζεται πλέγμα συντεταγμένων"
+  },
+  "boxplot": {
+    "ariaMedian": "{label} · διάμεσος {value}",
+    "tooltipMedian": "{label}: διάμεσος {value}",
+    "logScale": "λογαριθμική κλίμακα",
+    "logSuffix": " (λογ. κλίμακα)"
+  },
+  "funnel": {
+    "overallLabel": "Συνολική μετατροπή:",
+    "overallDetail": "— {last} από {first} ({firstLabel} → {lastLabel})",
+    "ofFirst": "{pct} του «{label}»"
+  },
+  "graph": {
+    "hub": "κεντρικός κόμβος",
+    "anomalyScale": "ανωμαλία (score 0 → 1)",
+    "noNodes": "Δεν υπάρχουν κόμβοι για εμφάνιση",
+    "links": "{count, plural, one {# σύνδεση} other {# συνδέσεις}}",
+    "askWhySuffix": "ρώτησε «γιατί;»",
+    "whyNode": "Γιατί αυτός ο κόμβος είναι στη συστάδα; →",
+    "topShown": "Εμφανίζονται οι κορυφαίοι {max} κόμβοι κατά score από {total}",
+    "clickHint": "Κλικ σε κόμβο — ρώτησε τον πράκτορα «γιατί;»"
+  },
+  "devCards": {
+    "title": "Βιτρίνα καρτών · {count, plural, one {# είδος} other {# είδη}}",
+    "intro": "Παραδείγματα από το VIEW_SPEC_CATALOG μέσα από το πραγματικό ViewSpecCard. Το κλικ σε στοιχείο κάρτας τυπώνει το ClickContext παρακάτω.",
+    "placeholder": "Το ClickContext θα εμφανιστεί εδώ μετά από κλικ σε κάρτα"
+  }
+}

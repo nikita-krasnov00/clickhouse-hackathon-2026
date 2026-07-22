@@ -21,14 +21,13 @@
  * как action:'why' с selection { node: id }, ClickContext это уже позволяет.
  */
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { ClickContext, GraphNode, GraphSpec } from "@/lib/contracts";
+import { useNumberFormat } from "@/lib/i18n/formats";
 
 const VB_W = 640;
 const VB_H = 360;
 const PAD = 36; // поле подгонки: максимальный радиус + подписи хабов
-
-const numFmt = new Intl.NumberFormat("ru-RU");
-const scoreFmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 
 /** Детерминированный хэш строки → [0, 1). FNV-1a. */
 function hash01(s: string): number {
@@ -64,6 +63,9 @@ export function NetworkGraphCard({
   cardId: string;
   onClickContext?: (ctx: ClickContext) => void;
 }) {
+  const t = useTranslations("graph");
+  const numFmt = useNumberFormat();
+  const scoreFmt = useNumberFormat({ maximumFractionDigits: 2 });
   const [hoverId, setHoverId] = useState<string | null>(null);
   const clickable = Boolean(onClickContext);
 
@@ -188,7 +190,7 @@ export function NetworkGraphCard({
   if (!layout) {
     return (
       <p className="px-1 py-6 text-center text-sm text-muted">
-        Нет узлов для отображения
+        {t("noNodes")}
       </p>
     );
   }
@@ -224,7 +226,7 @@ export function NetworkGraphCard({
             className="inline-block h-2.5 w-2.5 rounded-full"
             style={{ background: "var(--viz-series-1)" }}
           />
-          хаб
+          {t("hub")}
         </span>
         <span className="flex items-center gap-1.5">
           <span
@@ -235,7 +237,7 @@ export function NetworkGraphCard({
                 "linear-gradient(90deg, var(--muted), var(--viz-critical))",
             }}
           />
-          аномальность (score 0 → 1)
+          {t("anomalyScale")}
         </span>
       </div>
 
@@ -312,7 +314,7 @@ export function NetworkGraphCard({
                           l.node.score !== undefined
                             ? ` · score ${scoreFmt.format(l.node.score)}`
                             : ""
-                        } · ${numFmt.format(deg)} связей — спросить «почему?»`
+                        } · ${t("links", { count: deg })} — ${t("askWhySuffix")}`
                       : undefined
                   }
                   onMouseEnter={() => setHoverId(l.node.id)}
@@ -354,11 +356,11 @@ export function NetworkGraphCard({
               {hovered.node.score !== undefined
                 ? `score ${scoreFmt.format(hovered.node.score)} · `
                 : ""}
-              {numFmt.format(degree.get(hovered.node.id) ?? 0)} связей
+              {t("links", { count: degree.get(hovered.node.id) ?? 0 })}
             </div>
             {clickable && (
               <div className="mt-0.5 text-[10px] whitespace-nowrap text-accent">
-                Почему этот узел в кластере? →
+                {t("whyNode")}
               </div>
             )}
           </div>
@@ -367,13 +369,15 @@ export function NetworkGraphCard({
 
       {truncated > 0 && (
         <p className="mt-2 px-1 text-[11px] text-muted">
-          Показаны топ-{numFmt.format(spec.maxNodes)} узлов по score из{" "}
-          {numFmt.format(spec.nodes.length)}
+          {t("topShown", {
+            max: numFmt.format(spec.maxNodes),
+            total: numFmt.format(spec.nodes.length),
+          })}
         </p>
       )}
       {clickable && (
         <p className="mt-2 px-1 text-[11px] text-muted">
-          Клик по узлу — спросить агента «почему?»
+          {t("clickHint")}
         </p>
       )}
     </div>

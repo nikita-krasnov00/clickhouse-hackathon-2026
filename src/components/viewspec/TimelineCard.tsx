@@ -17,7 +17,9 @@
  * обычно. Ось Y пересчитывается под видимые точки.
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { ClickContext, TimelineSpec } from "@/lib/contracts";
+import { useDateTimeFormat, useNumberFormat } from "@/lib/i18n/formats";
 import { buildClickContext, findClickTarget, pointElementFields } from "./click";
 
 const VB_W = 640;
@@ -52,15 +54,6 @@ const MAX_SERIES = SERIES_COLORS.length;
  */
 const MARKER_BUDGET = 60;
 
-const numFmt = new Intl.NumberFormat("ru-RU");
-const dayFmt = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
-const timeFmt = new Intl.DateTimeFormat("ru-RU", {
-  day: "numeric",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
 /** «Красивый» шаг оси значений: 1/2/5 × 10^n. */
 function niceStep(rough: number): number {
   const pow = 10 ** Math.floor(Math.log10(Math.max(rough, 1e-9)));
@@ -87,6 +80,16 @@ export function TimelineCard({
   cardId: string;
   onClickContext?: (ctx: ClickContext) => void;
 }) {
+  const t = useTranslations("timeline");
+  const tCards = useTranslations("cards");
+  const numFmt = useNumberFormat();
+  const dayFmt = useDateTimeFormat({ day: "numeric", month: "short" });
+  const timeFmt = useDateTimeFormat({
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   const [hover, setHover] = useState<Hover>(null);
   /** Видимое окно времени; null — весь диапазон данных. */
   const [view, setView] = useState<View | null>(null);
@@ -163,7 +166,7 @@ export function TimelineCard({
     const showMarkers = visible.length <= MARKER_BUDGET;
 
     return { tMin, tMax, yMax, parsed, x, y, tAt, yTicks, xTicks, fmtT, showMarkers };
-  }, [series, domain, view]);
+  }, [series, domain, view, dayFmt, timeFmt]);
 
   // ---- зум/панорама -------------------------------------------------------
 
@@ -270,7 +273,7 @@ export function TimelineCard({
   if (!layout || !domain) {
     return (
       <p className="px-1 py-6 text-center text-sm text-muted">
-        Нет точек для отображения
+        {tCards("noPoints")}
       </p>
     );
   }
@@ -332,7 +335,7 @@ export function TimelineCard({
             onClick={() => setView(null)}
             className="absolute top-0 right-0 z-10 rounded-full border border-border bg-background/90 px-2 py-0.5 font-mono text-[10px] text-muted transition-colors hover:border-accent/60 hover:text-foreground"
           >
-            {fmtT(tMin)} — {fmtT(tMax)} · сброс ✕
+            {fmtT(tMin)} — {fmtT(tMax)} · {t("reset")} ✕
           </button>
         )}
         <svg
@@ -416,7 +419,7 @@ export function TimelineCard({
                 fontSize={10}
                 fill="var(--viz-critical)"
               >
-                зона аномалии
+                {t("anomalyZone")}
               </text>
             </g>
           )}
@@ -582,13 +585,15 @@ export function TimelineCard({
       <p className="mt-1 px-1 text-[10px] text-muted/80">
         {hiddenSeries > 0 && (
           <span style={{ color: "var(--viz-warning)" }}>
-            показаны {MAX_SERIES} серии из {MAX_SERIES + hiddenSeries} (по объёму);
-            для полной картины двух измерений уместнее heatmap ·{" "}
+            {t("hiddenSeries", {
+              shown: MAX_SERIES,
+              total: MAX_SERIES + hiddenSeries,
+            })}
+            {" · "}
           </span>
         )}
-        {!showMarkers && "точки скрыты при плотном ряде — приблизьте для деталей · "}
-        тяните по графику — зум диапазона · pinch/Ctrl+колесо — зум ·
-        Shift+колесо — панорама · двойной клик — сброс
+        {!showMarkers && `${t("markersHidden")} · `}
+        {t("howTo")}
       </p>
     </div>
   );

@@ -6,13 +6,9 @@
  * Без кликов и без SVG — типографика делает всю работу (в стиле стат-тайлов
  * VerdictCard, но одно значение и крупнее).
  */
+import { useTranslations } from "next-intl";
 import type { BigNumberSpec } from "@/lib/contracts";
-
-const numFmt = new Intl.NumberFormat("ru-RU");
-const deltaFmt = new Intl.NumberFormat("ru-RU", {
-  maximumFractionDigits: 1,
-  signDisplay: "always",
-});
+import { useNumberFormat } from "@/lib/i18n/formats";
 
 /** Цвет/значок/фон дельты: не полагаемся на один только цвет. */
 function deltaBadge(delta: number): { icon: string; color: string; bg: string } {
@@ -26,6 +22,12 @@ function deltaBadge(delta: number): { icon: string; color: string; bg: string } 
 }
 
 export function BigNumberCard({ spec }: { spec: BigNumberSpec }) {
+  const t = useTranslations("bignumber");
+  const numFmt = useNumberFormat();
+  const deltaFmt = useNumberFormat({
+    maximumFractionDigits: 1,
+    signDisplay: "always",
+  });
   const badge = spec.delta !== undefined ? deltaBadge(spec.delta) : null;
   return (
     <div className="px-1 py-2">
@@ -37,7 +39,7 @@ export function BigNumberCard({ spec }: { spec: BigNumberSpec }) {
           <span
             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums"
             style={{ color: badge.color, background: badge.bg }}
-            title="Изменение к базе сравнения, %"
+            title={t("deltaTitle")}
           >
             <span aria-hidden>{badge.icon}</span>
             {deltaFmt.format(spec.delta)}%

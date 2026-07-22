@@ -22,6 +22,7 @@
     "@trigger.dev/sdk": "4.5.5",
     "next": "16.2.10",
     "next-auth": "5.0.0-beta.32",
+    "next-intl": "^4.13.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "zod": "^4.4.3"

@@ -13,12 +13,14 @@
  * float-математике (Math.log10 в Node и браузере расходится в последнем ULP).
  */
 import { useState, useSyncExternalStore } from "react";
+import { useTranslations } from "next-intl";
 import { VIEW_SPEC_CATALOG } from "@/lib/contracts";
 import { ViewSpecCard } from "@/components/viewspec/ViewSpecCard";
 
 const noopSubscribe = () => () => {};
 
 export default function DevCardsPage() {
+  const t = useTranslations("devCards");
   const [lastClick, setLastClick] = useState<string | null>(null);
   // false на сервере и в гидрационном рендере, true после — mounted-гейт
   // без setState-в-эффекте.
@@ -32,16 +34,13 @@ export default function DevCardsPage() {
     <main className="mx-auto max-w-3xl px-4 py-8">
       <header className="mb-4">
         <h1 className="text-lg font-semibold tracking-tight">
-          Витрина карточек · {entries.length} видов
+          {t("title", { count: entries.length })}
         </h1>
-        <p className="mt-1 text-xs text-muted">
-          Примеры из VIEW_SPEC_CATALOG через настоящий ViewSpecCard. Клик по
-          элементу карточки печатает ClickContext ниже.
-        </p>
+        <p className="mt-1 text-xs text-muted">{t("intro")}</p>
       </header>
 
       <pre className="mb-4 min-h-16 overflow-auto rounded-lg border border-border bg-surface p-3 font-mono text-[11px] leading-relaxed text-muted">
-        {lastClick ?? "ClickContext появится здесь после клика по карточке"}
+        {lastClick ?? t("placeholder")}
       </pre>
 
       <div className="flex flex-col gap-4">

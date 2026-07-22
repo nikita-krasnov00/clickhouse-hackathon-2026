@@ -11,7 +11,8 @@
  * reviewing / card_ready несут sqlPreview|sql — под шагом раскрывающийся
  * моноширинный блок; board_planned перечисляет запланированные карточки.
  */
-import { RUN_STEP_LABELS, type RunStep } from "@/lib/contracts";
+import { useTranslations } from "next-intl";
+import type { RunStep } from "@/lib/contracts";
 import type { InvestigationPhase } from "@/lib/hooks/useInvestigationRun";
 
 function Spinner() {
@@ -96,7 +97,9 @@ function StepSql({ sql, open }: { sql: string; open?: boolean }) {
 }
 
 function StepRow({ step, isActive }: { step: RunStep; isActive: boolean }) {
-  const label = RUN_STEP_LABELS[step.step];
+  const tSteps = useTranslations("steps");
+  const tRun = useTranslations("run");
+  const label = tSteps(step.step);
   const isHealing = step.step === "healing";
   const isError = step.step === "error";
   // Сэмпл SQL шага: executing/reviewing несут sqlPreview, card_ready — sql.
@@ -132,7 +135,7 @@ function StepRow({ step, isActive }: { step: RunStep; isActive: boolean }) {
                 color: "var(--viz-warning)",
               }}
             >
-              попытка {step.attempt}/3
+              {tRun("attempt", { attempt: step.attempt })}
             </span>
           )}
           {step.step === "materializing" && step.table && (
@@ -186,6 +189,7 @@ export function RunProgress({
   steps: RunStep[];
   phase: InvestigationPhase;
 }) {
+  const t = useTranslations("run");
   const isLive = phase === "connecting" || phase === "running";
 
   return (
@@ -194,7 +198,7 @@ export function RunProgress({
         <li className="flex items-center gap-2 text-xs text-muted">
           <Spinner />
           <span>
-            Запускаю конвейер
+            {t("startingPipeline")}
             <ThinkingDots />
           </span>
         </li>

@@ -14,15 +14,15 @@
  * Клик по плитке → ClickContext по семантике ClickTarget on:'tile'.
  */
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { ClickContext, TreemapItem, TreemapSpec } from "@/lib/contracts";
+import { useNumberFormat } from "@/lib/i18n/formats";
 import { buildClickContext, findClickTarget, tileElementFields } from "./click";
 
 const VB_W = 640;
 const VB_H = 300;
 /** Оценка ширины текста: ~6.2px на символ при fontSize 11. */
 const CHAR_W = 6.2;
-
-const numFmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 
 /** Компактная подпись: 50, 500, 5k, 50k, 1.2M (как в ScatterCard). */
 function fmtCompact(v: number): string {
@@ -119,6 +119,8 @@ export function TreemapCard({
   cardId: string;
   onClickContext?: (ctx: ClickContext) => void;
 }) {
+  const tCards = useTranslations("cards");
+  const numFmt = useNumberFormat({ maximumFractionDigits: 2 });
   const [hover, setHover] = useState<number | null>(null);
   const tileTarget = findClickTarget(spec.clicks, "tile");
   const clickable = Boolean(tileTarget && onClickContext);
@@ -157,7 +159,7 @@ export function TreemapCard({
   }, [spec.items]);
 
   if (!layout) {
-    return <p className="px-1 py-6 text-center text-sm text-muted">Нет данных</p>;
+    return <p className="px-1 py-6 text-center text-sm text-muted">{tCards("noData")}</p>;
   }
   const { tiles, legend } = layout;
 
