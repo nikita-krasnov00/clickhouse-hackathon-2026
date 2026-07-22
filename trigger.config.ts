@@ -1,10 +1,10 @@
 import { defineConfig } from "@trigger.dev/sdk";
 import { syncEnvVars } from "@trigger.dev/build/extensions/core";
 
-// Прикладные переменные тасок (группы src/lib/config.ts). Деплой у нас ручной
-// (README), поэтому источник правды — локальный .env: syncEnvVars переливает
-// эти переменные в окружение Trigger.dev при каждом deploy. Секреты платформ
-// (TRIGGER_SECRET_KEY, админский CLICKHOUSE_USER/PASSWORD) намеренно не в списке.
+// Application task env vars (groups in src/lib/config.ts). Deploy is manual
+// (README), so the source of truth is local .env: syncEnvVars copies these
+// variables into the Trigger.dev environment on every deploy. Platform secrets
+// (TRIGGER_SECRET_KEY, admin CLICKHOUSE_USER/PASSWORD) are intentionally omitted.
 const TASK_ENV_VARS = [
   "CLICKHOUSE_URL",
   "AGENT_RO_USER",
@@ -17,16 +17,16 @@ const TASK_ENV_VARS = [
 ] as const;
 
 export default defineConfig({
-  // Project ref из дашборда Trigger.dev cloud (Project settings → Project ref).
-  // Приоритет — env (TRIGGER_PROJECT_REF из .env); хардкод остаётся фоллбеком,
-  // потому что конфиг читается CLI и при деплое, когда .env может быть недоступен.
-  // TRIGGER_SECRET_KEY сюда не пишем — он подхватывается из env (.env локально).
+  // Project ref from the Trigger.dev cloud dashboard (Project settings → Project ref).
+  // Priority is env (TRIGGER_PROJECT_REF from .env); hardcoded value remains a fallback
+  // because the config is read by the CLI during deploy when .env may be unavailable.
+  // TRIGGER_SECRET_KEY is not written here — it is picked up from env (.env locally).
   project: process.env.TRIGGER_PROJECT_REF ?? "proj_pqzjoyqabftwlurtatuy",
   dirs: ["./src/trigger"],
   runtime: "node",
   logLevel: "info",
-  // Максимум на один ран (сек). Агентный ран investigate с несколькими
-  // LLM-ходами и самопочинкой должен укладываться с запасом.
+  // Maximum per run (seconds). An investigate agent run with several
+  // LLM turns and self-healing should finish with headroom.
   maxDuration: 600,
   retries: {
     enabledInDev: false,
@@ -41,9 +41,9 @@ export default defineConfig({
     extensions: [
       syncEnvVars(() => {
         try {
-          process.loadEnvFile(".env"); // существующие переменные процесса не перекрывает
+          process.loadEnvFile(".env"); // does not overwrite existing process env vars
         } catch {
-          // .env нет (например, CI) — работаем с тем, что уже в окружении
+          // no .env (e.g. CI) — use whatever is already in the environment
         }
         return TASK_ENV_VARS.flatMap((name) => {
           const value = process.env[name]?.trim();

@@ -1,21 +1,21 @@
 /**
- * Триаж вопроса — первый и БЫСТРЫЙ шаг конвейера v2 (ярус 'fast', цель ~1-2 c).
+ * Question triage — first FAST step of the v2 pipeline (tier 'fast', target ~1-2 s).
  *
- * Вход: вопрос пользователя + живой каталог таблиц (catalogTables, фаза A) +
- * опциональный контекст клика. Выход — одно из трёх решений:
- *   - proceed:    какие таблицы исследовать глубоко и какие карточки строить
- *                 (kind + title + hint) — манифест уходит в board_planned, и
- *                 UI рисует скелеты дашборда ещё ДО генерации SQL;
- *   - clarify:    вопрос нельзя осмысленно понять без одного уточнения —
- *                 вопрос пользователю + варианты ответа;
- *   - impossible: в ClickHouse нет данных под вопрос — честная причина +
- *                 список того, о чём данные ОТВЕТИТЬ МОГУТ.
+ * Input: user question + live table catalog (catalogTables, phase A) +
+ * optional click context. Output — one of three decisions:
+ *   - proceed:    which tables to explore deeply and which cards to build
+ *                 (kind + title + hint) — manifest goes to board_planned, and
+ *                 UI draws dashboard skeletons BEFORE SQL generation;
+ *   - clarify:    question cannot be understood without one clarification —
+ *                 question to user + answer options;
+ *   - impossible: ClickHouse has no data for the question — honest reason +
+ *                 list of what the data CAN answer.
  *
- * Триаж не пишет SQL: он решает, ЧТО строить. SQL для каждой карточки пишет
- * основная модель в generate-sql.ts (параллельно, по карточке на дочерний ран).
+ * Triage does not write SQL: it decides WHAT to build. SQL for each card is
+ * written by the main model in generate-sql.ts (in parallel, one child run per card).
  *
- * Здесь же suggestQuestions() — вопросы-пресеты для главной страницы,
- * сгенерированные по тому же каталогу (/api/suggest).
+ * Also suggestQuestions() — preset questions for the home page,
+ * generated from the same catalog (/api/suggest).
  */
 import { z } from "zod";
 import { viewKindSchema, type ClickContext } from "@/lib/contracts";
@@ -24,24 +24,24 @@ import { askAndParse, extractJsonObject } from "./llm-json";
 import { chatComplete } from "./llm";
 import { languageDirective } from "./language";
 
-/** Потолок карточек одного дашборда — больше трёх углов сразу не нужно. */
+/** Cap on cards per dashboard — more than three angles at once is unnecessary. */
 export const MAX_PLAN_CARDS = 3;
 
 // ---------------------------------------------------------------------------
-// Типы решения
+// Decision types
 // ---------------------------------------------------------------------------
 
 /**
- * Карточка плана триажа. Zod-схема — потому что TriageCard ездит payload'ом
- * дочерней Trigger-таски investigate-card и валидируется на входе.
+ * Triage plan card. Zod schema — because TriageCard travels as payload of
+ * the child Trigger task investigate-card and is validated on entry.
  */
 export const triageCardSchema = z.object({
-  /** Стабильный id скелета: card-1, card-2, … — присваивается кодом. */
+  /** Stable skeleton id: card-1, card-2, … — assigned by code. */
   cardId: z.string().min(1),
   kind: viewKindSchema,
-  /** Заголовок-инсайт на языке вопроса — виден на скелете сразу. */
+  /** Insight headline in the question language — visible on skeleton immediately. */
   title: z.string().min(1),
-  /** Одно предложение для SQL-инженера: что посчитать, какими таблицами. */
+  /** One sentence for the SQL engineer: what to compute, which tables. */
   hint: z.string().optional(),
 });
 export type TriageCard = z.infer<typeof triageCardSchema>;
@@ -58,7 +58,7 @@ export type TriageInput = {
 };
 
 // ---------------------------------------------------------------------------
-// Парсинг ответа модели
+// Model response parsing
 // ---------------------------------------------------------------------------
 
 const triageAnswerSchema = z.object({
@@ -84,7 +84,7 @@ function parseTriageAnswer(content: string, catalog: CatalogTable[]): TriageResu
 
   if (raw.decision === "clarify") {
     if (!raw.question?.trim()) {
-      throw new Error('decision "clarify" требует непустой "question"');
+      throw new Error('decision "clarify" requires a non-empty "question"');
     }
     const options = (raw.options ?? []).map((o) => o.trim()).filter(Boolean);
     return {
@@ -96,7 +96,7 @@ function parseTriageAnswer(content: string, catalog: CatalogTable[]): TriageResu
 
   if (raw.decision === "impossible") {
     if (!raw.reason?.trim()) {
-      throw new Error('decision "impossible" требует непустой "reason"');
+      throw new Error('decision "impossible" requires a non-empty "reason"');
     }
     const available = (raw.available ?? []).map((a) => a.trim()).filter(Boolean);
     return {
@@ -106,7 +106,7 @@ function parseTriageAnswer(content: string, catalog: CatalogTable[]): TriageResu
     };
   }
 
-  // proceed: таблицы строго из каталога, capы жёсткие.
+  // proceed: tables strictly from catalog, hard caps.
   const known = new Set(catalog.map((t) => t.table));
   const tables = [...new Set(raw.tables ?? [])]
     .map((t) => t.trim())
@@ -114,7 +114,7 @@ function parseTriageAnswer(content: string, catalog: CatalogTable[]): TriageResu
     .slice(0, MAX_DEEP_TABLES);
   if (tables.length === 0) {
     throw new Error(
-      'decision "proceed" требует "tables" с полными именами таблиц ИЗ КАТАЛОГА',
+      'decision "proceed" requires "tables" with full table names FROM THE CATALOG',
     );
   }
   const cards = (raw.cards ?? [])
@@ -126,16 +126,16 @@ function parseTriageAnswer(content: string, catalog: CatalogTable[]): TriageResu
       ...(c.hint?.trim() ? { hint: c.hint.trim() } : {}),
     }));
   if (cards.length === 0) {
-    throw new Error('decision "proceed" требует хотя бы одну карточку');
+    throw new Error('decision "proceed" requires at least one card');
   }
   return { decision: "proceed", tables, cards };
 }
 
 // ---------------------------------------------------------------------------
-// Промпт
+// Prompt
 // ---------------------------------------------------------------------------
 
-/** Каталог в компактном виде: колонки — строками "name Type" ради токенов. */
+/** Catalog in compact form: columns as "name Type" strings to save tokens. */
 function compactCatalogForPrompt(catalog: CatalogTable[]): string {
   return JSON.stringify(
     catalog.map((t) => ({
@@ -195,10 +195,10 @@ function buildTriageUserPrompt(input: TriageInput): string {
 }
 
 // ---------------------------------------------------------------------------
-// Публичные функции
+// Public functions
 // ---------------------------------------------------------------------------
 
-/** Триаж вопроса на быстрой модели; ошибки парсинга — один reparse-повтор. */
+/** Question triage on the fast model; parsing errors — one reparse retry. */
 export async function triageQuestion(input: TriageInput): Promise<TriageResult> {
   return askAndParse(
     [
@@ -218,9 +218,9 @@ const suggestAnswerSchema = z.object({
 });
 
 /**
- * Вопросы-пресеты для главной: 4 коротких вопроса по живому каталогу таблиц
- * (разные базы — разные вопросы). Быстрая модель, без reparse-страховки:
- * пресеты некритичны, сбой обрабатывает вызывающий (/api/suggest → []).
+ * Home page preset questions: 4 short questions from the live table catalog
+ * (different databases — different questions). Fast model, no reparse safety:
+ * presets are non-critical, failure handled by caller (/api/suggest → []).
  */
 export async function suggestQuestions(catalog: CatalogTable[]): Promise<string[]> {
   const { content } = await chatComplete(

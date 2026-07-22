@@ -1,21 +1,21 @@
 "use client";
 
 /**
- * BoardGrid (C2) — сетка карточек дашборда по манифесту board_planned.
+ * BoardGrid (C2) — dashboard card grid from the board_planned manifest.
  *
- * Каждый элемент манифеста рисуется на СВОЁМ месте (порядок манифеста
- * сохраняется) в одном из трёх состояний:
- *   pending → скелет: та же рамка CardShell, что и у готовой ViewSpecCard
- *             (kind-бейдж + title из манифеста), внутри — shimmer-заглушка
- *             высотой примерно как у будущей карточки этого вида;
- *   ready   → скелет гидратируется в настоящую ViewSpecCard на том же месте;
- *   failed  → скелет схлопывается в компактную честную карточку ошибки
- *             (в стиле FallbackCard из ViewSpecCard.tsx — рамка статуса
- *             critical, без драмы).
+ * Each manifest entry is rendered in ITS OWN slot (manifest order preserved)
+ * in one of three states:
+ *   pending → skeleton: same CardShell frame as a ready ViewSpecCard
+ *             (kind badge + title from manifest), inside — shimmer placeholder
+ *             roughly the height of the future card of that kind;
+ *   ready   → skeleton hydrates into a real ViewSpecCard in the same slot;
+ *   failed  → skeleton collapses into a compact honest error card
+ *             (FallbackCard style from ViewSpecCard.tsx — critical status
+ *             border, no drama).
  *
- * Внеплановые card_ready без cardId (или без совпадения в манифесте) уже
- * подмешаны хуком useInvestigationRun в хвост cards — здесь просто рендерим
- * массив по порядку.
+ * Unplanned card_ready without cardId (or no manifest match) is already
+ * appended by useInvestigationRun at the tail of cards — here we just render
+ * the array in order.
  */
 import type { ViewKind } from "@/lib/contracts";
 import type { BoardCard } from "@/lib/hooks/useInvestigationRun";
@@ -25,7 +25,7 @@ import {
   type SpecClickHandler,
 } from "@/components/viewspec/ViewSpecCard";
 
-/** Примерная высота будущего содержимого карточки по виду — скелет не «прыгает». */
+/** Approximate height of future card content by kind — skeleton doesn't "jump". */
 const SKELETON_HEIGHT: Record<ViewKind, number> = {
   timeline: 240,
   scatter: 260,
@@ -41,7 +41,7 @@ const SKELETON_HEIGHT: Record<ViewKind, number> = {
   boxplot: 200,
 };
 
-/** Скелет карточки: рамка ViewSpecCard + shimmer-заглушка вместо данных. */
+/** Card skeleton: ViewSpecCard frame + shimmer placeholder instead of data. */
 function CardSkeleton({ kind, title }: { kind: ViewKind; title: string }) {
   return (
     <CardShell kind={kind} title={title}>
@@ -64,7 +64,7 @@ function CardSkeleton({ kind, title }: { kind: ViewKind; title: string }) {
   );
 }
 
-/** Скелет, не дождавшийся данных: компактная честная карточка ошибки. */
+/** Skeleton that never got data: compact honest error card. */
 function CardFailed({
   kind,
   title,

@@ -1,6 +1,6 @@
 /**
- * Роуты NextAuth: /api/auth/* — signin, callback/google, signout, session.
- * Вся логика в src/auth.ts, здесь только экспорт хендлеров.
+ * NextAuth routes: /api/auth/* — signin, callback/google, signout, session.
+ * All logic lives in src/auth.ts; this file only exports handlers.
  */
 import { handlers } from "@/auth";
 

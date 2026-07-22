@@ -1,16 +1,16 @@
 "use client";
 
 /**
- * Дев-витрина карточек: все виды ViewSpec на примерах из VIEW_SPEC_CATALOG.
+ * Dev card showcase: all ViewSpec kinds with examples from VIEW_SPEC_CATALOG.
  *
- * Живой визуальный смоук рендереров без ClickHouse и LLM: каждый пример
- * каталога проходит через настоящий ViewSpecCard (валидация + рендер).
- * Клик по любому элементу показывает собранный ClickContext сверху страницы —
- * так проверяется семантика ClickTarget каждого компонента.
+ * Live visual smoke test of renderers without ClickHouse or LLM: each catalog
+ * example goes through the real ViewSpecCard (validation + render).
+ * Clicking any element shows the assembled ClickContext at the top of the page —
+ * verifies ClickTarget semantics for each component.
  *
- * Карточки рендерятся ТОЛЬКО после маунта (как в боевой ленте, где они
- * появляются из Realtime-событий): SSR чартов ловит гидрационный мисматч на
- * float-математике (Math.log10 в Node и браузере расходится в последнем ULP).
+ * Cards render ONLY after mount (like the production feed where they appear
+ * from Realtime events): SSR chart rendering hits hydration mismatch on
+ * float math (Math.log10 in Node vs browser diverges in the last ULP).
  */
 import { useState, useSyncExternalStore } from "react";
 import { VIEW_SPEC_CATALOG } from "@/lib/contracts";
@@ -20,8 +20,8 @@ const noopSubscribe = () => () => {};
 
 export default function DevCardsPage() {
   const [lastClick, setLastClick] = useState<string | null>(null);
-  // false на сервере и в гидрационном рендере, true после — mounted-гейт
-  // без setState-в-эффекте.
+  // false on server and during hydration render, true after — mounted gate
+  // without setState-in-effect.
   const mounted = useSyncExternalStore(
     noopSubscribe,
     () => true,

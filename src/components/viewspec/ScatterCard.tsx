@@ -1,22 +1,22 @@
 "use client";
 
 /**
- * Scatter — диаграмма рассеяния {x, y, label?}: связь двух величин видна глазом.
+ * Scatter — scatter plot {x, y, label?}: relationship between two variables visible at a glance.
  *
- * Читаемость (доработка тула):
- *  - ЛИНИЯ ТРЕНДА (МНК) + коэффициент Пирсона r с качественной подписью прямо
- *    на карточке — сразу отвечает «есть ли связь?», не требуя отдельного вердикта;
- *  - ЛОГ-ШКАЛА по осям (xScale/yScale='log') для величин на разные порядки:
- *    точки приходят СЫРЫМИ, лог делает рендер, а тики подписаны РЕАЛЬНЫМИ
- *    значениями (50/500/5k), не log-числами — прежде LLM логарифмировал в SQL
- *    и ось показывала нечитабельные 1.7/3.0;
- *  - подпись-инструкция «как читать» и полупрозрачные точки для плотности.
+ * Readability (tool polish):
+ *  - TREND LINE (OLS) + Pearson r coefficient with qualitative label directly
+ *    on the card — immediately answers "is there a relationship?" without a separate verdict;
+ *  - LOG SCALE on axes (xScale/yScale='log') for values spanning orders of magnitude:
+ *    points arrive RAW, log is applied at render, ticks labeled with REAL
+ *    values (50/500/5k), not log numbers — previously LLM log-transformed in SQL
+ *    and the axis showed unreadable 1.7/3.0;
+ *  - "how to read" instruction and semi-transparent points for density.
  *
- * Регрессия и r считаются в КООРДИНАТАХ ГРАФИКА (в лог-пространстве при лог-оси),
- * поэтому линия прямая на экране, а r совпадает с тем, что видно.
+ * Regression and r are computed in CHART COORDINATES (log space when axis is log),
+ * so the line is straight on screen and r matches what's visible.
  *
- * Рукописный SVG в стиле TimelineCard: hairline-сетка, точки r=4 с кольцом
- * поверхности, hover-тултип, хит-таргет r=12. Клик по точке → ClickContext.
+ * Hand-written SVG in TimelineCard style: hairline grid, r=4 points with surface
+ * ring, hover tooltip, hit target r=12. Point click → ClickContext.
  */
 import { useId, useMemo, useState } from "react";
 import type { AxisScale, ClickContext, ScatterSpec } from "@/lib/contracts";
@@ -30,10 +30,10 @@ const VB_W = 640;
 const VB_H = 280;
 const M = { top: 18, right: 16, bottom: 48, left: 56 };
 
-/** Точное значение в тултип (разделитель тысяч). */
+/** Exact value in tooltip (thousands separator). */
 const numFmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 
-/** Компактная подпись тика: 50, 500, 5k, 50k, 1.2M. */
+/** Compact tick label: 50, 500, 5k, 50k, 1.2M. */
 function fmtCompact(v: number): string {
   const a = Math.abs(v);
   if (a >= 1e6) return `${+(v / 1e6).toFixed(a >= 1e7 ? 0 : 1)}M`;
@@ -42,7 +42,7 @@ function fmtCompact(v: number): string {
   return String(+v.toFixed(2));
 }
 
-/** «Красивый» шаг оси: 1/2/5 × 10^n. */
+/** "Nice" axis step: 1/2/5 × 10^n. */
 function niceStep(rough: number): number {
   const pow = 10 ** Math.floor(Math.log10(Math.max(rough, 1e-9)));
   const unit = rough / pow;
@@ -51,22 +51,22 @@ function niceStep(rough: number): number {
 }
 
 type Axis = {
-  /** value → координата viewBox (уже с учётом лог-преобразования). */
+  /** value → viewBox coordinate (already with log transform). */
   pos: (v: number) => number;
-  /** Тики: позиция t (в пространстве оси) + подпись реального значения. */
+  /** Ticks: position t (in axis space) + real value label. */
   ticks: { v: number; label: string }[];
-  /** value → внутренняя координата оси (log10 для лог-шкалы, иначе сама v). */
+  /** value → internal axis coordinate (log10 for log scale, otherwise v itself). */
   t: (v: number) => number;
   min: number;
   max: number;
 };
 
-/** Лог-шкала возможна только для строго положительных значений. */
+/** Log scale only possible for strictly positive values. */
 function effectiveScale(scale: AxisScale | undefined, values: number[]): AxisScale {
   return scale === "log" && values.every((v) => v > 0) ? "log" : "linear";
 }
 
-/** Строит ось: домен, тики (реальные подписи) и функции преобразования. */
+/** Builds axis: domain, ticks (real labels) and transform functions. */
 function buildAxis(
   values: number[],
   scale: AxisScale,
@@ -80,7 +80,7 @@ function buildAxis(
     if (lo === hi) hi = lo + 1;
     const t = (v: number) => Math.log10(Math.max(v, 1e-9));
     const pos = (v: number) => pxMin + ((t(v) - lo) / (hi - lo)) * (pxMax - pxMin);
-    // Тики — степени десятки; при узком диапазоне добавляем 3×10^k.
+    // Ticks — powers of ten; in narrow range add 3×10^k.
     const decades = hi - lo;
     const ticks: { v: number; label: string }[] = [];
     for (let e = lo; e <= hi; e++) {
@@ -94,7 +94,7 @@ function buildAxis(
     return { pos, ticks, t, min: 10 ** lo, max: 10 ** hi };
   }
 
-  // Линейная шкала.
+  // Linear scale.
   let lo = Math.min(...values);
   let hi = Math.max(...values);
   if (lo === hi) {
@@ -116,16 +116,16 @@ function buildAxis(
 }
 
 type Trend = {
-  /** Линия в координатах viewBox: (x1,y1)-(x2,y2). */
+  /** Line in viewBox coordinates: (x1,y1)-(x2,y2). */
   x1: number;
   y1: number;
   x2: number;
   y2: number;
-  /** Пирсон r в пространстве осей (лог, если ось логарифмическая). */
+  /** Pearson r in axis space (log if axis is logarithmic). */
   r: number;
 } | null;
 
-/** МНК-регрессия и Пирсон r в пространстве осей (совпадает с картинкой). */
+/** OLS regression and Pearson r in axis space (matches the picture). */
 function computeTrend(
   points: { x: number; y: number }[],
   ax: Axis,
@@ -144,11 +144,11 @@ function computeTrend(
     syy += (p.ty - my) ** 2;
     sxy += (p.tx - mx) * (p.ty - my);
   }
-  if (sxx < 1e-9 || syy < 1e-9) return null; // нет вариации по оси
+  if (sxx < 1e-9 || syy < 1e-9) return null; // no variation along axis
   const slope = sxy / sxx;
   const intercept = my - slope * mx;
   const r = sxy / Math.sqrt(sxx * syy);
-  // Линия по краям видимого домена (в t-пространстве), затем в пиксели.
+  // Line along visible domain edges (in t-space), then to pixels.
   const tMin = ax.t(ax.min);
   const tMax = ax.t(ax.max);
   const posY = (ty: number) =>
@@ -164,7 +164,7 @@ function computeTrend(
   };
 }
 
-/** Качественная подпись силы и направления связи по |r|. */
+/** Qualitative label for strength and direction of correlation by |r|. */
 function describeR(r: number): string {
   const a = Math.abs(r);
   const strength =
@@ -228,7 +228,7 @@ export function ScatterCard({
 
   return (
     <div>
-      {/* Резюме связи — главное, что отвечает на вопрос «есть ли зависимость?» */}
+      {/* Correlation summary — main answer to "is there a dependency?" */}
       <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 px-1">
         {trend ? (
           <span className="flex items-center gap-1.5 text-xs">
@@ -272,7 +272,7 @@ export function ScatterCard({
             </clipPath>
           </defs>
 
-          {/* Сетка + подписи по Y (реальные значения) */}
+          {/* Grid + Y labels (real values) */}
           {ay.ticks.map((tick, i) => (
             <g key={`y${i}`}>
               <line
@@ -295,7 +295,7 @@ export function ScatterCard({
             </g>
           ))}
 
-          {/* Сетка + подписи по X (реальные значения) */}
+          {/* Grid + X labels (real values) */}
           {ax.ticks.map((tick, i) => (
             <g key={`x${i}`}>
               <line
@@ -318,7 +318,7 @@ export function ScatterCard({
             </g>
           ))}
 
-          {/* Линия тренда (МНК) — поверх сетки, под точками */}
+          {/* Trend line (OLS) — over grid, under points */}
           {trend && (
             <line
               x1={trend.x1}
@@ -332,7 +332,7 @@ export function ScatterCard({
             />
           )}
 
-          {/* Точки: видимые r=4 с кольцом + хит-таргет r=12 */}
+          {/* Points: visible r=4 with ring + hit target r=12 */}
           <g clipPath={`url(#${clipId})`}>
             {spec.points.map((p, i) => {
               const cx = ax.pos(p.x);
@@ -380,7 +380,7 @@ export function ScatterCard({
             })}
           </g>
 
-          {/* Подписи осей */}
+          {/* Axis labels */}
           <text
             x={M.left + (VB_W - M.left - M.right) / 2}
             y={VB_H - 6}
@@ -406,7 +406,7 @@ export function ScatterCard({
           </text>
         </svg>
 
-        {/* Тултип: сущность — главное, реальные координаты — вторичные */}
+        {/* Tooltip: entity — primary, real coordinates — secondary */}
         {hover && hovered && (
           <div
             className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-background px-2.5 py-1.5 shadow-lg"
@@ -434,7 +434,7 @@ export function ScatterCard({
         )}
       </div>
 
-      {/* Как читать */}
+      {/* How to read */}
       <p className="mt-1 px-1 text-[10px] text-muted/80">
         каждая точка — одна сущность{spec.points[0]?.label ? " (наведите — имя и точные значения)" : ""};
         пунктир — линия тренда: наклон вверх ↗ = связь прямая, вниз ↘ = обратная,

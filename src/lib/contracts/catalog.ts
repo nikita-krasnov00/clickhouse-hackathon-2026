@@ -1,27 +1,27 @@
 /**
- * VIEW_SPEC_CATALOG — каталог компонентов для промпта text-to-SQL (задача B4).
- * Одно место правды о том, какие карточки бывают, когда какую выбирать и как
- * выглядит валидный JSON. Примеры типизированы точным вариантом ViewSpec и
- * прогоняются через схемы в contracts:smoke — каталог не может разъехаться
- * с контрактом.
+ * VIEW_SPEC_CATALOG — component catalog for the text-to-SQL prompt (task B4).
+ * Single source of truth for which cards exist, when to pick each, and what
+ * valid JSON looks like. Examples are typed to the exact ViewSpec variant and
+ * run through schemas in contracts:smoke — the catalog cannot drift from
+ * the contract.
  *
- * Примеры НАРОЧНО нейтральные (заказы/выручка/сегменты): движок
- * dataset-agnostic, домен приходит из живого schema context, а не из каталога.
- * Описания — на английском (уходят в промпт LLM), заголовки примеров — на
- * русском (язык демо; промпт просит писать title на языке вопроса).
+ * Examples are INTENTIONALLY neutral (orders/revenue/segments): the engine is
+ * dataset-agnostic, domain comes from live schema context, not the catalog.
+ * Descriptions are in English (sent to the LLM prompt), example titles are in
+ * Russian (demo language; the prompt asks to write title in the question language).
  */
 import type { ViewKind, ViewSpec } from "./view-spec";
 
 type CatalogShape = {
   [K in ViewKind]: {
     kind: K;
-    /** Что это за карточка, одной строкой. */
+    /** What this card is, in one line. */
     summary: string;
-    /** Когда её выбирать. */
+    /** When to choose it. */
     whenToUse: string;
-    /** Форма данных, которую надо заполнить. */
+    /** Data shape to fill in. */
     dataShape: string;
-    /** Валидный заполненный пример. */
+    /** Valid filled example. */
     example: Extract<ViewSpec, { kind: K }>;
   };
 };
@@ -335,8 +335,8 @@ export const VIEW_SPEC_CATALOG: CatalogShape = {
 };
 
 /**
- * Готовый блок каталога для системного промпта B4: описание + пример JSON
- * по каждому виду карточки.
+ * Ready catalog block for the B4 system prompt: description + JSON example
+ * for each card kind.
  */
 export function formatViewSpecCatalogForPrompt(): string {
   return Object.values(VIEW_SPEC_CATALOG)

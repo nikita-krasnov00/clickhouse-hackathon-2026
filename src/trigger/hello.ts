@@ -1,15 +1,15 @@
 import { logger, task, wait } from "@trigger.dev/sdk";
 
 /**
- * Пример durable-таски (B1) — проверка, что связка Trigger.dev работает.
+ * Example durable task (B1) — verifies the Trigger.dev setup works.
  *
- * Durable означает: ран переживает рестарты воркера. `wait.for` создаёт
- * checkpoint — процесс может умереть во время ожидания, ран продолжится
- * с этого места. Настоящие таски проекта (explore-schema — B2,
- * investigate — B3) появятся рядом в этой папке.
+ * Durable means: the run survives worker restarts. `wait.for` creates a
+ * checkpoint — the process may die during the wait, and the run resumes
+ * from that point. Real project tasks (explore-schema — B2,
+ * investigate — B3) will live alongside this one in this folder.
  *
- * Запуск: `npx trigger.dev@latest dev`, затем таб Test в дашборде,
- * payload вида {"name": "ClickHouse"}.
+ * Run: `npx trigger.dev@latest dev`, then the Test tab in the dashboard,
+ * payload like {"name": "ClickHouse"}.
  */
 export const helloTask = task({
   id: "hello",
@@ -22,12 +22,12 @@ export const helloTask = task({
   },
   run: async (payload: { name?: string }, { ctx }) => {
     const name = payload.name ?? "мир";
-    logger.info("hello: старт", { name, runId: ctx.run.id });
+    logger.info("hello: start", { name, runId: ctx.run.id });
 
-    // Checkpoint: durable-ожидание, переживает рестарт воркера.
+    // Checkpoint: durable wait that survives a worker restart.
     await wait.for({ seconds: 5 });
 
-    logger.info("hello: проснулись после wait.for — ран durable");
+    logger.info("hello: woke up after wait.for — run is durable");
     return {
       greeting: `Привет, ${name}!`,
       runId: ctx.run.id,

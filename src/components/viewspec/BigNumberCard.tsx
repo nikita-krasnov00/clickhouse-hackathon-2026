@@ -1,10 +1,10 @@
 /**
- * BigNumber — крупный KPI: значение во всю карточку, подпись метрики,
- * опциональная дельта в % (рост — зелёный ▲, падение — красный ▼, ноль —
- * приглушённый, не только цвет) и вторичная подпись detail.
+ * BigNumber — large KPI: value fills the card, metric label, optional delta in
+ * % (up — green ▲, down — red ▼, zero — muted, not color alone) and secondary
+ * detail caption.
  *
- * Без кликов и без SVG — типографика делает всю работу (в стиле стат-тайлов
- * VerdictCard, но одно значение и крупнее).
+ * No clicks and no SVG — typography does all the work (stat-tile style like
+ * VerdictCard, but a single value and larger).
  */
 import type { BigNumberSpec } from "@/lib/contracts";
 
@@ -14,7 +14,7 @@ const deltaFmt = new Intl.NumberFormat("ru-RU", {
   signDisplay: "always",
 });
 
-/** Цвет/значок/фон дельты: не полагаемся на один только цвет. */
+/** Delta color/icon/background: don't rely on color alone. */
 function deltaBadge(delta: number): { icon: string; color: string; bg: string } {
   if (delta > 0) {
     return { icon: "▲", color: "var(--viz-good)", bg: "rgba(12, 163, 12, 0.12)" };

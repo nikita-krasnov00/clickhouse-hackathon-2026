@@ -1,21 +1,21 @@
 /**
- * B4 — клиент OpenRouter (chat completions) для text-to-SQL и самопочинки.
+ * B4 — OpenRouter client (chat completions) for text-to-SQL and self-healing.
  *
- * Нативный fetch (Node 20+), без новых зависимостей. ДВА ЯРУСА моделей:
- *   - main — тяжёлая работа (SQL, самопочинка, вердикты): env LLM_MODEL
- *     (слаг OpenRouter или алиас из MODEL_ALIASES), дефолт minimax/minimax-m3,
- *     при недоступности — цепочка MiniMax вниз;
- *   - fast — триаж вопроса и подсказки-пресеты, где важна скорость первого
- *     ответа: env LLM_MODEL_FAST, дефолт openai/gpt-5.6-terra (~1.5-2 c),
- *     фоллбек — основная цепочка.
- * Reasoning-моделям GPT-5.x/o-серии temperature НЕ отправляется (их эндпоинт
- * параметр не принимает). Рабочая модель каждого яруса кэшируется на процесс,
- * чтобы фоллбек-пробы не повторялись на каждый вызов.
+ * Native fetch (Node 20+), no new dependencies. TWO model tiers:
+ *   - main — heavy work (SQL, self-healing, verdicts): env LLM_MODEL
+ *     (OpenRouter slug or alias from MODEL_ALIASES), default minimax/minimax-m3,
+ *     on unavailability — MiniMax fallback chain;
+ *   - fast — question triage and preset suggestions where first-response
+ *     latency matters: env LLM_MODEL_FAST, default openai/gpt-5.6-terra (~1.5-2 s),
+ *     fallback — main chain.
+ * Reasoning models GPT-5.x/o-series do NOT receive temperature (their endpoint
+ * does not accept the parameter). Working model per tier is cached per process
+ * so fallback probes are not repeated on every call.
  *
- * Ретраи: 429/5xx/сеть/таймаут — один повтор с паузой, затем следующая модель.
+ * Retries: 429/5xx/network/timeout — one retry with pause, then next model.
  *
- * Операционный лог: КАЖДАЯ попытка (включая неудачные и фоллбеки моделей)
- * пишется в scratch.llm_log — полный промпт, ответ, статус, тайминг (llm-log.ts).
+ * Operational log: EVERY attempt (including failures and model fallbacks)
+ * is written to scratch.llm_log — full prompt, response, status, timing (llm-log.ts).
  */
 import { config } from "@/lib/config";
 import { logLlmCall } from "./llm-log";
@@ -27,7 +27,7 @@ export type ChatMessage = {
 
 export type ChatCompletionResult = {
   content: string;
-  /** Фактическая модель, ответившая на запрос (после фоллбеков). */
+  /** Actual model that answered the request (after fallbacks). */
   model: string;
   elapsedMs: number;
 };
@@ -36,7 +36,7 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export const DEFAULT_LLM_MODEL = "minimax/minimax-m3";
 
-/** Цепочка фоллбеков — версии MiniMax на OpenRouter, от новой к старой. */
+/** Fallback chain — MiniMax versions on OpenRouter, newest to oldest. */
 const MODEL_FALLBACKS = [
   DEFAULT_LLM_MODEL,
   "minimax/minimax-m2.7",
@@ -45,13 +45,13 @@ const MODEL_FALLBACKS = [
   "minimax/minimax-m2",
 ];
 
-/** OpenAI GPT-5.6 Terra на OpenRouter (reasoning-серия GPT-5.x). */
+/** OpenAI GPT-5.6 Terra on OpenRouter (GPT-5.x reasoning series). */
 export const OPENAI_GPT_5_6_TERRA = "openai/gpt-5.6-terra";
 
 /**
- * Короткие алиасы для LLM_MODEL — чтобы в .env можно было указать
- * «gpt-5.6-terra» вместо полного слага. Ключи сравниваются в нижнем регистре;
- * полный слаг OpenRouter (`openai/…`, `minimax/…`) всегда можно задать напрямую.
+ * Short aliases for LLM_MODEL — so .env can use
+ * "gpt-5.6-terra" instead of the full slug. Keys compared in lowercase;
+ * full OpenRouter slug (`openai/…`, `minimax/…`) can always be set directly.
  */
 const MODEL_ALIASES: Record<string, string> = {
   "gpt-5.6-terra": OPENAI_GPT_5_6_TERRA,
@@ -59,16 +59,16 @@ const MODEL_ALIASES: Record<string, string> = {
   "minimax-m3": DEFAULT_LLM_MODEL,
 };
 
-/** Разворачивает алиас в слаг OpenRouter; неизвестное значение — как есть. */
+/** Resolve alias to OpenRouter slug; unknown value — as-is. */
 function resolveModelAlias(model: string | undefined): string | undefined {
   if (!model) return model;
   return MODEL_ALIASES[model.trim().toLowerCase()] ?? model;
 }
 
 /**
- * reasoning-модели OpenAI (GPT-5.x, o-серия) на OpenRouter НЕ принимают
- * temperature — для них параметр не отправляем; остальным (MiniMax и т.п.)
- * задаём низкую температуру ради детерминизма text-to-SQL.
+ * OpenAI reasoning models (GPT-5.x, o-series) on OpenRouter do NOT accept
+ * temperature — we omit the parameter for them; for others (MiniMax etc.)
+ * we set low temperature for text-to-SQL determinism.
  */
 function modelSupportsTemperature(model: string): boolean {
   return !/^openai\/(gpt-5|o\d)/i.test(model);
@@ -77,19 +77,19 @@ function modelSupportsTemperature(model: string): boolean {
 const REQUEST_TIMEOUT_MS = 120_000;
 const RETRY_PAUSE_MS = 1_500;
 const TEMPERATURE = 0.2;
-/** С запасом: MiniMax — reasoning-модели, thinking-токены тоже считаются. */
+/** With headroom: MiniMax — reasoning models, thinking tokens count too. */
 const MAX_TOKENS = 8_000;
 
 /**
- * Ярусы моделей: main — тяжёлая работа (SQL/heal/verdict), fast — триаж и
- * подсказки, где решает латентность первого ответа.
+ * Model tiers: main — heavy work (SQL/heal/verdict), fast — triage and
+ * suggestions where first-response latency matters.
  */
 export type LlmTier = "main" | "fast";
 
-/** Дефолт быстрого яруса — GPT-5.6 Terra (env LLM_MODEL_FAST переопределяет). */
+/** Default fast tier — GPT-5.6 Terra (env LLM_MODEL_FAST overrides). */
 export const FAST_LLM_DEFAULT = OPENAI_GPT_5_6_TERRA;
 
-/** Рабочая модель каждого яруса, найденная фоллбек-пробами; кэш на процесс. */
+/** Working model per tier found by fallback probes; cached per process. */
 const resolvedByTier: Partial<Record<LlmTier, string>> = {};
 
 function mainCandidates(): string[] {
@@ -104,7 +104,7 @@ function candidateModels(tier: LlmTier): string[] {
       resolvedByTier.fast ??
       resolveModelAlias(config.llm.fastModel) ??
       FAST_LLM_DEFAULT;
-    // Фоллбек быстрого яруса — основная цепочка: медленный триаж лучше мёртвого.
+    // Fast tier fallback — main chain: slow triage beats dead.
     return [first, ...mainCandidates().filter((m) => m !== first)];
   }
   return mainCandidates();
@@ -122,7 +122,7 @@ async function attemptOnce(
   model: string,
   messages: ChatMessage[],
 ): Promise<AttemptResult> {
-  // Валидация группы LLM конфига — понятная ошибка, если ключ не задан.
+  // Validate LLM config group — clear error if key is missing.
   const { apiKey } = config.llm;
 
   const controller = new AbortController();
@@ -133,7 +133,7 @@ async function attemptOnce(
       messages,
       max_tokens: MAX_TOKENS,
     };
-    // GPT-5.x/o-серия temperature не принимают; остальным — для детерминизма.
+    // GPT-5.x/o-series do not accept temperature; others — for determinism.
     if (modelSupportsTemperature(model)) requestBody.temperature = TEMPERATURE;
 
     const res = await fetch(OPENROUTER_URL, {
@@ -148,7 +148,7 @@ async function attemptOnce(
 
     const bodyText = await res.text();
     if (!res.ok) {
-      // 429 и 5xx — временные, ретраим; прочие 4xx — модель/запрос не годятся.
+      // 429 and 5xx — transient, retry; other 4xx — model/request unsuitable.
       return {
         ok: false,
         retryable: res.status === 429 || res.status >= 500,
@@ -160,7 +160,7 @@ async function attemptOnce(
     try {
       parsed = JSON.parse(bodyText);
     } catch {
-      return { ok: false, retryable: true, reason: "ответ OpenRouter — не JSON" };
+      return { ok: false, retryable: true, reason: "OpenRouter response is not JSON" };
     }
     const body = parsed as {
       choices?: { message?: { content?: string } }[];
@@ -171,14 +171,14 @@ async function attemptOnce(
     }
     const content = body.choices?.[0]?.message?.content;
     if (!content || !content.trim()) {
-      // Пустой content (например, всё ушло в reasoning и упёрлось в max_tokens).
-      return { ok: false, retryable: true, reason: "пустой content в ответе модели" };
+      // Empty content (e.g. everything went to reasoning and hit max_tokens).
+      return { ok: false, retryable: true, reason: "empty content in model response" };
     }
     return { ok: true, content };
   } catch (err) {
     const reason =
       err instanceof Error && err.name === "AbortError"
-        ? `таймаут ${REQUEST_TIMEOUT_MS} мс`
+        ? `timeout ${REQUEST_TIMEOUT_MS} ms`
         : err instanceof Error
           ? err.message
           : String(err);
@@ -189,16 +189,16 @@ async function attemptOnce(
 }
 
 export type ChatCompleteOptions = {
-  /** Назначение вызова для операционного лога (card_sql, heal_sql, triage, …). */
+  /** Call purpose for operational log (card_sql, heal_sql, triage, …). */
   purpose?: string;
-  /** Ярус модели: 'fast' — триаж/подсказки, дефолт 'main'. */
+  /** Model tier: 'fast' — triage/suggestions, default 'main'. */
   tier?: LlmTier;
 };
 
 /**
- * Один chat-completion: модель из env/дефолта выбранного яруса, фоллбеки по
- * цепочке, один ретрай на временных ошибках. Возвращает сырой content —
- * парсинг JSON из ответа делает вызывающий (llm-json.ts).
+ * One chat completion: model from env/default of chosen tier, fallbacks along
+ * the chain, one retry on transient errors. Returns raw content —
+ * JSON parsing is done by the caller (llm-json.ts).
  */
 export async function chatComplete(
   messages: ChatMessage[],
@@ -216,8 +216,8 @@ export async function chatComplete(
       const attemptStarted = Date.now();
       const result = await attemptOnce(model, messages);
       const attemptMs = Date.now() - attemptStarted;
-      // await дешёвый: wait_for_async_insert=0 — подтверждение из буфера
-      // сервера (миллисекунды), а сбой логирования гасится внутри logLlmCall.
+      // await is cheap: wait_for_async_insert=0 — confirmation from buffer
+      // (milliseconds), and logging failures are swallowed inside logLlmCall.
       await logLlmCall({
         purpose,
         model,
@@ -234,11 +234,11 @@ export async function chatComplete(
         console.log(`[llm] purpose=${purpose} model=${model} elapsed=${elapsedMs}ms`);
         return { content: result.content, model, elapsedMs };
       }
-      failures.push(`${model} (попытка ${attempt}): ${result.reason}`);
-      if (!result.retryable) break; // модель недоступна — к следующей в цепочке
+      failures.push(`${model} (attempt ${attempt}): ${result.reason}`);
+      if (!result.retryable) break; // model unavailable — move to next in chain
       if (attempt === 1) await sleep(RETRY_PAUSE_MS);
     }
   }
 
-  throw new Error(`LLM недоступна, все модели исчерпаны: ${failures.join(" | ")}`);
+  throw new Error(`LLM unavailable, all models exhausted: ${failures.join(" | ")}`);
 }

@@ -1,37 +1,37 @@
 /**
- * Конфигурация проекта из .env — одно место правды вместо разбросанных
- * process.env (источники: .env локально через --env-file/Next, env раннера
- * Trigger.dev на деплое; шаблон — .env.example).
+ * Project configuration from .env — single source of truth instead of scattered
+ * process.env (sources: .env locally via --env-file/Next, Trigger.dev runner env
+ * on deploy; template — .env.example).
  *
- * Валидация — zod, ЛЕНИВО и ПО ГРУППАМ: каждая группа парсится при первом
- * обращении и кэшируется на процесс. Поэтому скрипту, которому нужен только
- * ClickHouse (ch:ping), не нужен OPENROUTER_API_KEY, и наоборот. Ошибка
- * валидации перечисляет все недостающие переменные группы разом.
+ * Validation is zod, LAZY and BY GROUP: each group is parsed on first access
+ * and cached per process. So a script that only needs ClickHouse (ch:ping) does
+ * not need OPENROUTER_API_KEY, and vice versa. Validation errors list all
+ * missing variables in the group at once.
  *
- * Только для серверного кода (API-роуты, конвейер, Trigger-таски, скрипты) —
- * в клиентские компоненты не импортировать: секреты не должны попасть в бандл.
+ * Server code only (API routes, pipeline, Trigger tasks, scripts) —
+ * do not import into client components: secrets must not leak into the bundle.
  */
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
-// Схемы групп
+// Group schemas
 // ---------------------------------------------------------------------------
 
 const nonEmpty = z.string().trim().min(1);
 
 /**
- * Пустая строка в .env (скопированный незаполненный шаблон `VAR=`) —
- * то же самое, что отсутствие переменной: опциональные поля и дефолты
- * не должны падать из-за неё.
+ * Empty string in .env (copied unfilled template `VAR=`) —
+ * same as a missing variable: optional fields and defaults
+ * must not fail because of it.
  */
 const emptyAsUndefined = (v: unknown) =>
   typeof v === "string" && v.trim() === "" ? undefined : v;
 
 const optionalVar = z.preprocess(emptyAsUndefined, nonEmpty.optional());
 
-/** ClickHouse Cloud: адрес и два агентских юзера (создаёт трек A, задача A1). */
+/** ClickHouse Cloud: address and two agent users (created by track A, task A1). */
 const clickhouseEnvSchema = z.object({
-  /** host:port без протокола (https:// добавляется здесь) либо полный URL. */
+  /** host:port without protocol (https:// added here) or full URL. */
   CLICKHOUSE_URL: nonEmpty,
   AGENT_RO_USER: nonEmpty,
   AGENT_RO_PASSWORD: nonEmpty,
@@ -39,32 +39,32 @@ const clickhouseEnvSchema = z.object({
   AGENT_SCRATCH_PASSWORD: nonEmpty,
 });
 
-/** LLM (OpenRouter). Модели опциональны — дефолты и фоллбеки живут в llm.ts. */
+/** LLM (OpenRouter). Models are optional — defaults and fallbacks live in llm.ts. */
 const llmEnvSchema = z.object({
   OPENROUTER_API_KEY: nonEmpty,
-  /** Основная модель: text-to-SQL, самопочинка, вердикты. */
+  /** Primary model: text-to-SQL, self-healing, verdicts. */
   LLM_MODEL: optionalVar,
-  /** Быстрая модель: триаж вопроса, подсказки-пресеты. Пусто — дефолт llm.ts. */
+  /** Fast model: question triage, preset suggestions. Empty — default from llm.ts. */
   LLM_MODEL_FAST: optionalVar,
 });
 
-/** Вход на фронтенд: Google OAuth через NextAuth (src/auth.ts). */
+/** Frontend entry: Google OAuth via NextAuth (src/auth.ts). */
 const authEnvSchema = z.object({
-  /** Подпись/шифрование сессионных cookie: openssl rand -base64 32. */
+  /** Session cookie signing/encryption: openssl rand -base64 32. */
   AUTH_SECRET: nonEmpty,
-  /** OAuth client (Web) из Google Cloud Console → Credentials. */
+  /** OAuth client (Web) from Google Cloud Console → Credentials. */
   AUTH_GOOGLE_ID: nonEmpty,
   AUTH_GOOGLE_SECRET: nonEmpty,
-  /** Кому разрешён вход: email через запятую. Пусто — любой Google-аккаунт. */
+  /** Who may sign in: comma-separated emails. Empty — any Google account. */
   AUTH_ALLOWED_EMAILS: optionalVar,
 });
 
 // ---------------------------------------------------------------------------
-// Типы наружу
+// Exported types
 // ---------------------------------------------------------------------------
 
 export type ClickHouseConfig = {
-  /** Полный URL с протоколом. */
+  /** Full URL with protocol. */
   url: string;
   readonly: { username: string; password: string };
   scratch: { username: string; password: string };
@@ -72,9 +72,9 @@ export type ClickHouseConfig = {
 
 export type LlmConfig = {
   apiKey: string;
-  /** Основная модель из env; undefined — взять дефолтную цепочку llm.ts. */
+  /** Primary model from env; undefined — use default chain from llm.ts. */
   model: string | undefined;
-  /** Быстрая модель из env; undefined — дефолт llm.ts (GPT-5.6 Terra). */
+  /** Fast model from env; undefined — default from llm.ts (GPT-5.6 Terra). */
   fastModel: string | undefined;
 };
 
@@ -82,12 +82,12 @@ export type AuthConfig = {
   secret: string;
   googleId: string;
   googleSecret: string;
-  /** Нормализованный allowlist (lowercase); пустой — вход любому аккаунту. */
+  /** Normalized allowlist (lowercase); empty — any account may sign in. */
   allowedEmails: string[];
 };
 
 // ---------------------------------------------------------------------------
-// Ленивый парсинг с кэшем на процесс
+// Lazy parsing with per-process cache
 // ---------------------------------------------------------------------------
 
 function parseGroup<S extends z.ZodRawShape>(
@@ -100,7 +100,7 @@ function parseGroup<S extends z.ZodRawShape>(
       .map((i) => i.path.join("."))
       .filter((v, idx, arr) => arr.indexOf(v) === idx);
     throw new Error(
-      `Конфигурация ${group}: не заданы или пусты переменные окружения ${missing.join(", ")} — см. .env.example (локально: .env + tsx --env-file / next dev)`,
+      `${group} configuration: environment variables missing or empty: ${missing.join(", ")} — see .env.example (locally: .env + tsx --env-file / next dev)`,
     );
   }
   return result.data;

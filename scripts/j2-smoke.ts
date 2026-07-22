@@ -1,5 +1,5 @@
-// J2 smoke: триггерим investigate через Trigger.dev cloud (dev env),
-// ждём исполнения dev-воркером, проверяем шаги в metadata и финальный output.
+// J2 smoke: trigger investigate via Trigger.dev cloud (dev env),
+// wait for the dev worker to execute, verify steps in metadata and final output.
 import { tasks, runs } from "@trigger.dev/sdk/v3";
 
 async function main() {
@@ -24,7 +24,7 @@ async function main() {
       const out = run.output as { viewSpecs?: { kind: string; title?: string }[] } | undefined;
       const specs = out?.viewSpecs ?? [];
       console.log(
-        `[j2-smoke] viewSpecs: ${specs.map((s) => `${s.kind}:"${s.title ?? ""}"`).join(", ") || "НЕТ"}`
+        `[j2-smoke] viewSpecs: ${specs.map((s) => `${s.kind}:"${s.title ?? ""}"`).join(", ") || "NONE"}`
       );
       process.exit(specs.length > 0 ? 0 : 2);
     }
@@ -34,7 +34,7 @@ async function main() {
     }
     await new Promise((r) => setTimeout(r, 3000));
   }
-  console.error("[j2-smoke] timeout 240s — ран не завершился (dev-воркер жив?)");
+  console.error("[j2-smoke] timeout 240s — run did not finish (is the dev worker alive?)");
   process.exit(1);
 }
 

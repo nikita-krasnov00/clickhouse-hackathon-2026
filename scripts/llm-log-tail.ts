@@ -1,7 +1,7 @@
 /**
- * Хвост операционного лога LLM-вызовов: `npm run llm:log` (по умолчанию 20
- * последних) или `npm run llm:log -- 50`. Полный промпт/ответ конкретной
- * строки: `npm run llm:log -- --full <N>` (N — номер строки из выдачи).
+ * Tail of the operational LLM call log: `npm run llm:log` (last 20 by default)
+ * or `npm run llm:log -- 50`. Full prompt/response for a specific row:
+ * `npm run llm:log -- --full <N>` (N is the row number from the listing).
  */
 import { createScratchClient } from "../src/lib/clickhouse";
 import { LLM_LOG_TABLE } from "../src/lib/agent/llm-log";
@@ -46,23 +46,23 @@ async function main() {
     });
     const rows = await rs.json<LogRow>();
     if (rows.length === 0) {
-      console.log(`${LLM_LOG_TABLE} пуст — ни одного LLM-вызова ещё не записано.`);
+      console.log(`${LLM_LOG_TABLE} is empty — no LLM calls recorded yet.`);
       return;
     }
 
     if (fullRow !== undefined) {
       const row = rows[fullRow - 1];
-      if (!row) throw new Error(`строки №${fullRow} нет (всего ${rows.length})`);
-      console.log(`=== ${row.ts} · ${row.purpose} · ${row.model} · попытка ${row.attempt} · ${row.status} · ${row.elapsed_ms} мс`);
+      if (!row) throw new Error(`row #${fullRow} does not exist (total ${rows.length})`);
+      console.log(`=== ${row.ts} · ${row.purpose} · ${row.model} · attempt ${row.attempt} · ${row.status} · ${row.elapsed_ms} ms`);
       if (row.error) console.log(`--- error\n${row.error}`);
       console.log("--- request (messages JSON)");
       console.log(JSON.stringify(JSON.parse(row.request), null, 2));
       console.log("--- response");
-      console.log(row.response || "(пусто)");
+      console.log(row.response || "(empty)");
       return;
     }
 
-    console.log(`Последние ${rows.length} LLM-вызовов (${LLM_LOG_TABLE}), новые сверху:\n`);
+    console.log(`Last ${rows.length} LLM calls (${LLM_LOG_TABLE}), newest first:\n`);
     rows.forEach((r, i) => {
       const head = [
         String(i + 1).padStart(2),
@@ -71,13 +71,13 @@ async function main() {
         r.purpose.padEnd(22),
         r.model,
         `#${r.attempt}`,
-        `${r.elapsed_ms} мс`,
-        `${r.request_chars}→${r.response_chars} симв.`,
+        `${r.elapsed_ms} ms`,
+        `${r.request_chars}→${r.response_chars} chars`,
       ].join("  ");
       console.log(head);
       console.log(`    ${r.status === "ok" ? short(r.response, 140) : short(r.error, 140)}`);
     });
-    console.log("\nПолная строка: npm run llm:log -- --full <N>");
+    console.log("\nFull row: npm run llm:log -- --full <N>");
   } finally {
     await client.close();
   }

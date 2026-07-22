@@ -1,11 +1,11 @@
 /**
- * HTTP-контракты (/api/ask, /api/suggest) и Realtime-прогресс рана.
+ * HTTP contracts (/api/ask, /api/suggest) and Realtime run progress.
  *
- * v2 (dataset-agnostic): контракты /api/drill удалены — клик по карточке всегда
- * уходит НОВЫМ раном агента (action 'why' с ClickContext). Добавлены шаги
- * триажа: board_planned (манифест карточек — UI рисует скелеты мгновенно),
- * card_failed (скелет превращается в честную ошибку), clarify (агенту нужно
- * уточнение) и impossible (по данным в ClickHouse ответить нельзя).
+ * v2 (dataset-agnostic): /api/drill contracts removed — card clicks always
+ * trigger a NEW agent run (action 'why' with ClickContext). Triage steps added:
+ * board_planned (card manifest — UI renders skeletons instantly),
+ * card_failed (skeleton becomes an honest error), clarify (agent needs
+ * clarification) and impossible (ClickHouse data cannot answer the question).
  */
 import { z } from "zod";
 import { clickContextSchema } from "./click";
@@ -13,9 +13,9 @@ import { viewKindSchema, viewSpecSchema } from "./view-spec";
 import type { AnswerLanguage } from "./language";
 
 // ---------------------------------------------------------------------------
-// Ask API — вопрос (или «почему?» с контекстом клика) → агентный ран.
+// Ask API — question (or "why?" with click context) → agent run.
 // POST /api/ask { question, context? } → { runId, publicAccessToken }
-// Токен — public access token Trigger.dev для Realtime-подписки на ран.
+// Token is a Trigger.dev public access token for Realtime run subscription.
 // ---------------------------------------------------------------------------
 
 export const askRequestSchema = z.strictObject({
@@ -31,8 +31,8 @@ export const askResponseSchema = z.strictObject({
 export type AskResponse = z.infer<typeof askResponseSchema>;
 
 // ---------------------------------------------------------------------------
-// Suggest API — вопросы-пресеты, сгенерированные по живому каталогу схем.
-// GET /api/suggest → { questions } (пустой массив — валидный ответ-фоллбек).
+// Suggest API — preset questions generated from the live schema catalog.
+// GET /api/suggest → { questions } (empty array is a valid fallback response).
 // ---------------------------------------------------------------------------
 
 export const suggestResponseSchema = z.strictObject({
@@ -41,28 +41,28 @@ export const suggestResponseSchema = z.strictObject({
 export type SuggestResponse = z.infer<typeof suggestResponseSchema>;
 
 // ---------------------------------------------------------------------------
-// RunStep — прогресс конвейера investigate, стримится через Realtime.
+// RunStep — investigate pipeline progress, streamed via Realtime.
 //
-// Дискриминатор — `step`; у всех шагов опциональный `message` (человекочитаемая
-// строка для ленты). Порядок жизни рана v2:
-//   exploring      → каталог таблиц, затем глубокая разведка выбранных;
-//   generating_sql → триаж (выбор таблиц и карточек) и per-card генерация SQL;
-//   board_planned  → манифест дашборда [{cardId, kind, title}] — UI сразу
-//                    рисует СКЕЛЕТЫ карточек, не дожидаясь данных;
-//   clarify        → агенту не хватает вводных: вопрос пользователю (+варианты);
-//                    ран завершается пустым done — ответ приходит новым /api/ask;
-//   impossible     → по данным в ClickHouse ответить нельзя: причина + что
-//                    ЕСТЬ в данных (available); ран завершается пустым done;
-//   reviewing / executing → несут sqlPreview (превью SQL в ленте);
-//   healing        → номер попытки (1..3) и текст ошибки ClickHouse;
-//   materializing  → имя temp-таблицы в scratch (B6, зарезервировано);
-//   card_ready     → ОДНА готовая карточка (+ её SQL и cardId скелета);
-//   card_failed    → карточка окончательно не удалась (cardId + error);
-//   done           → итоговые viewSpecs;
-//   error          → терминальная неудача всего рана, message обязателен.
+// Discriminator is `step`; all steps have an optional `message` (human-readable
+// string for the feed). v2 run lifecycle order:
+//   exploring      → table catalog, then deep exploration of selected tables;
+//   generating_sql → triage (table and card selection) and per-card SQL generation;
+//   board_planned  → dashboard manifest [{cardId, kind, title}] — UI immediately
+//                    renders card SKELETONS without waiting for data;
+//   clarify        → agent lacks inputs: question for the user (+ options);
+//                    run ends with empty done — answer comes via a new /api/ask;
+//   impossible     → ClickHouse data cannot answer: reason + what IS
+//                    available in the data; run ends with empty done;
+//   reviewing / executing → carry sqlPreview (SQL preview in the feed);
+//   healing        → attempt number (1..3) and ClickHouse error text;
+//   materializing  → temp table name in scratch (B6, reserved);
+//   card_ready     → ONE ready card (+ its SQL and skeleton cardId);
+//   card_failed    → card ultimately failed (cardId + error);
+//   done           → final viewSpecs;
+//   error          → terminal failure of the entire run, message required.
 // ---------------------------------------------------------------------------
 
-/** Карточка манифеста дашборда: скелет рисуется до готовности данных. */
+/** Dashboard manifest card: skeleton is rendered before data is ready. */
 export const plannedBoardCardSchema = z.strictObject({
   cardId: z.string().min(1),
   kind: viewKindSchema,
@@ -86,17 +86,17 @@ export const runStepSchema = z.discriminatedUnion("step", [
   }),
   z.strictObject({
     step: z.literal("clarify"),
-    /** Вопрос пользователю на языке его вопроса. */
+    /** Question for the user in the language of their question. */
     question: z.string().min(1),
-    /** Короткие варианты ответа — UI рисует их чипами. */
+    /** Short answer options — UI renders them as chips. */
     options: z.array(z.string()).optional(),
     message: z.string().optional(),
   }),
   z.strictObject({
     step: z.literal("impossible"),
-    /** Почему по имеющимся данным ответить нельзя. */
+    /** Why the available data cannot answer the question. */
     reason: z.string().min(1),
-    /** Что в данных ЕСТЬ — 2–4 подсказки, о чём спрашивать. */
+    /** What IS in the data — 2–4 hints about what to ask instead. */
     available: z.array(z.string()).optional(),
     message: z.string().optional(),
   }),
@@ -123,16 +123,16 @@ export const runStepSchema = z.discriminatedUnion("step", [
   }),
   z.strictObject({
     step: z.literal("card_ready"),
-    /** cardId скелета из board_planned — UI гидратирует его на месте. */
+    /** Skeleton cardId from board_planned — UI hydrates it in place. */
     cardId: z.string().optional(),
     viewSpec: viewSpecSchema,
-    /** SQL, которым получена карточка (для sql-карточек) — сэмпл в ленте шагов. */
+    /** SQL that produced the card (for sql-based cards) — sample in the step feed. */
     sql: z.string().optional(),
     message: z.string().optional(),
   }),
   z.strictObject({
     step: z.literal("card_failed"),
-    /** cardId скелета из board_planned. */
+    /** Skeleton cardId from board_planned. */
     cardId: z.string().optional(),
     error: z.string(),
     message: z.string().optional(),
@@ -151,9 +151,9 @@ export type RunStep = z.infer<typeof runStepSchema>;
 export type RunStepName = RunStep["step"];
 
 /**
- * Подписи шагов для прогресса в UI (C2) — одно место правды, двуязычно.
- * Язык рана берётся из вопроса (detectAnswerLanguage), см. language.ts:
- * ризонинг обязан говорить на языке ответа.
+ * Step labels for UI progress (C2) — single source of truth, bilingual.
+ * Run language comes from the question (detectAnswerLanguage), see language.ts:
+ * reasoning must speak in the answer language.
  */
 export const RUN_STEP_LABELS_BY_LANGUAGE: Record<
   AnswerLanguage,
@@ -191,14 +191,14 @@ export const RUN_STEP_LABELS_BY_LANGUAGE: Record<
   },
 };
 
-/** Подпись шага на языке рана. */
+/** Step label in the run language. */
 export function runStepLabel(step: RunStepName, language: AnswerLanguage): string {
   return RUN_STEP_LABELS_BY_LANGUAGE[language][step];
 }
 
 /**
- * Русские подписи как было — обратная совместимость для кода, который ещё не
- * получил язык рана. Новый код должен звать runStepLabel(step, language).
+ * Russian labels as before — backward compatibility for code that has not yet
+ * received the run language. New code should call runStepLabel(step, language).
  */
 export const RUN_STEP_LABELS: Record<RunStepName, string> =
   RUN_STEP_LABELS_BY_LANGUAGE.Russian;

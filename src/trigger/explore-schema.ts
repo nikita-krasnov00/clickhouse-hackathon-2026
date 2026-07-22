@@ -2,12 +2,12 @@ import { logger, task } from "@trigger.dev/sdk";
 import { runExploreSchema } from "@/lib/agent/explore";
 
 /**
- * B2 — таска exploration: живое обнаружение таблиц + count + min/max дат +
- * топ-N/кардинальности ключевых колонок + сэмплы. Персистентного кэша нет —
- * таска показывает контекст, который агент соберёт на ближайшем ране.
+ * B2 — exploration task: live table discovery + count + min/max dates +
+ * top-N/cardinalities of key columns + samples. No persistent cache —
+ * the task shows the context the agent will gather on the next run.
  *
- * Запускается вручную из дашборда (payload {}) или триггером из кода;
- * тот же код локально без Trigger: `npm run explore:schema`.
+ * Trigger manually from the dashboard (payload {}) or from code;
+ * same code locally without Trigger: `npm run explore:schema`.
  */
 export const exploreSchemaTask = task({
   id: "explore-schema",
@@ -22,7 +22,7 @@ export const exploreSchemaTask = task({
       keyColumns: ctx.keyColumns.map((k) => `${k.column} (uniq ${k.cardinality})`),
       contextBytes: JSON.stringify(ctx).length,
     }));
-    logger.info("explore-schema: контекст обновлён", { summary });
+    logger.info("explore-schema: context refreshed", { summary });
     return { tables: summary };
   },
 });

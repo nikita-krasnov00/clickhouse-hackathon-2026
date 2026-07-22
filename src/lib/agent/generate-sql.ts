@@ -1,38 +1,38 @@
 /**
- * Шаг генерации SQL v2 — ПО ОДНОЙ карточке (B4) + самопочинка (B5).
+ * SQL generation step v2 — ONE card at a time (B4) + self-healing (B5).
  *
- * Контракт шва: generateCardSql({question, schemaContext, clickContext?, card})
- * → GeneratedSql. Карточку (kind + title + hint) назначает триаж (triage.ts);
- * эта модель пишет ClickHouse SELECT ровно под неё. Карточки одного дашборда
- * генерятся ПАРАЛЛЕЛЬНО — каждая на своём дочернем ране investigate-card.
+ * Seam contract: generateCardSql({question, schemaContext, clickContext?, card})
+ * → GeneratedSql. Card (kind + title + hint) is assigned by triage (triage.ts);
+ * this model writes a ClickHouse SELECT for it exactly. Cards of one dashboard
+ * are generated IN PARALLEL — each on its own investigate-card child run.
  *
- * Промпт generic и dataset-agnostic: никакого доменного знания в тексте —
- * все факты о данных (таблицы, sorting keys, реальные распределения значений,
- * диапазоны дат, сэмплы) приходят из живого schema context (explore.ts).
+ * Prompt is generic and dataset-agnostic: no domain knowledge in the text —
+ * all facts about data (tables, sorting keys, real value distributions,
+ * date ranges, samples) come from live schema context (explore.ts).
  *
- * КОНВЕНЦИИ ФОРМЫ ДАННЫХ (их обязан соблюдать LLM-SQL, их читает buildViewSpec):
- *   - kind: 'timeline'    → колонки `t` (дата/датавремя), `v` (число),
- *                           опционально `series` (строка) для нескольких линий;
- *   - kind: 'leaderboard' → любые колонки; первая — сущность, остальные — метрики;
- *   - kind: 'histogram'   → колонки `label` (строка) и `count` (целое ≥ 0);
- *   - kind: 'heatmap'     → колонки `x` (строка), `y` (строка), `value` (число);
- *   - kind: 'verdict'     → РОВНО одна строка агрегатов; каждая колонка станет
- *                           стат-фактом evidence (алиасы — читабельный snake_case);
- *   - kind: 'bignumber'   → РОВНО одна строка; колонка `value` (число), опц.
- *                           `delta` (число, % к базе), `label`/`detail` (строки);
- *   - kind: 'scatter'     → колонки `x` (число), `y` (число), опц. `label`
- *                           (строка, имя сущности); не больше 500 точек;
- *   - kind: 'graph'       → колонки `source`, `target` (строки — пара сущностей),
- *                           опц. `weight` (число); узлы и скоры выводит код;
- *   - kind: 'treemap'     → колонки `label` (строка), `value` (число > 0),
- *                           опц. `group` (строка — группа верхнего уровня);
- *   - kind: 'funnel'      → колонки `label`, `count` в порядке этапов воронки;
- *   - kind: 'boxplot'     → колонки `label`, `lo`, `q1`, `med`, `q3`, `hi` —
- *                           пять квантилей метрики на группу (quantiles()).
+ * DATA SHAPE CONVENTIONS (LLM SQL must follow them, buildViewSpec reads them):
+ *   - kind: 'timeline'    → columns `t` (date/datetime), `v` (number),
+ *                           optional `series` (string) for multiple lines;
+ *   - kind: 'leaderboard' → any columns; first — entity, rest — metrics;
+ *   - kind: 'histogram'   → columns `label` (string) and `count` (integer ≥ 0);
+ *   - kind: 'heatmap'     → columns `x` (string), `y` (string), `value` (number);
+ *   - kind: 'verdict'     → EXACTLY one row of aggregates; each column becomes
+ *                           an evidence stat (aliases — readable snake_case);
+ *   - kind: 'bignumber'   → EXACTLY one row; column `value` (number), opt.
+ *                           `delta` (number, % vs baseline), `label`/`detail` (strings);
+ *   - kind: 'scatter'     → columns `x` (number), `y` (number), opt. `label`
+ *                           (string, entity name); at most 500 points;
+ *   - kind: 'graph'       → columns `source`, `target` (strings — entity pair),
+ *                           opt. `weight` (number); nodes and scores derived by code;
+ *   - kind: 'treemap'     → columns `label` (string), `value` (number > 0),
+ *                           opt. `group` (string — top-level group);
+ *   - kind: 'funnel'      → columns `label`, `count` in funnel stage order;
+ *   - kind: 'boxplot'     → columns `label`, `lo`, `q1`, `med`, `q3`, `hi` —
+ *                           five quantiles of the metric per group (quantiles()).
  *
- * Здесь же: healSql() — починка упавшего SQL по тексту ошибки ClickHouse (B5),
- * summarizeVerdict() — вердикт+уверенность по фактическим агрегатам, и
- * sanitizeSql() — страховка «только SELECT» поверх прав agent_ro.
+ * Also here: healSql() — fix failed SQL from ClickHouse error text (B5),
+ * summarizeVerdict() — verdict + confidence from actual aggregates, and
+ * sanitizeSql() — "SELECT only" safety on top of agent_ro rules.
  */
 import { z } from "zod";
 import {
@@ -46,7 +46,7 @@ import type { TriageCard } from "./triage";
 import { askAndParse, extractJsonObject } from "./llm-json";
 import { languageDirective } from "./language";
 
-/** Назначение карточки от триажа — без cardId (он остаётся у конвейера). */
+/** Card assignment from triage — without cardId (stays with the pipeline). */
 export type CardAssignment = Pick<TriageCard, "kind" | "title" | "hint">;
 
 export type GenerateCardSqlInput = {
@@ -60,59 +60,59 @@ export type GeneratedSql = {
   sql: string;
   kind: ViewKind;
   title: string;
-  /** Только для timeline: [от, до] окна аномалии, если модель его видит. */
+  /** Timeline only: [from, to] anomaly window if the model sees one. */
   anomalyWindow?: [string, string];
-  /** Только для histogram: подпись оси корзин. */
+  /** Histogram only: bucket axis label. */
   bucketLabel?: string;
-  /** Только для scatter: подпись оси x. */
+  /** Scatter only: x-axis label. */
   xLabel?: string;
-  /** Только для scatter: подпись оси y. */
+  /** Scatter only: y-axis label. */
   yLabel?: string;
-  /** Только для scatter: 'log' для величин, разбросанных на порядки. */
+  /** Scatter only: 'log' for quantities spanning orders of magnitude. */
   xScale?: "linear" | "log";
   yScale?: "linear" | "log";
-  /** map/treemap/boxplot: подпись величины value («посадки», «выручка»). */
+  /** map/treemap/boxplot: value label ("landings", "revenue"). */
   valueLabel?: string;
 };
 
 // ---------------------------------------------------------------------------
-// Санитайз SQL — страховка поверх прав agent_ro
+// SQL sanitization — safety on top of agent_ro rules
 // ---------------------------------------------------------------------------
 
 const FORBIDDEN_SQL = /\b(insert|update|delete|drop|alter|create|truncate|rename|grant|revoke|attach|detach|optimize|system|kill|exchange|use)\b/i;
 
-/** Копия SQL без строковых литералов и комментариев — для проверки ключевых слов. */
+/** SQL copy without string literals and comments — for keyword checks. */
 function stripLiteralsAndComments(sql: string): string {
   return sql
-    .replace(/'(?:\\.|''|[^'\\])*'/g, "''") // '…' с учётом \' и ''
+    .replace(/'(?:\\.|''|[^'\\])*'/g, "''") // '…' with \' and '' support
     .replace(/--[^\n]*/g, " ")
     .replace(/\/\*[\s\S]*?\*\//g, " ");
 }
 
 /**
- * Отрезает хвостовые `;`, запрещает мульти-стейтменты и всё, что не SELECT.
- * Кидает понятную ошибку — в конвейере она уходит в цикл самопочинки.
+ * Strip trailing `;`, forbid multi-statements and anything that is not SELECT.
+ * Throws a clear error — in the pipeline it goes into the self-healing loop.
  */
 export function sanitizeSql(rawSql: string): string {
   const sql = rawSql.trim().replace(/;+\s*$/g, "").trim();
-  if (!sql) throw new Error("пустой SQL");
+  if (!sql) throw new Error("empty SQL");
 
   const shadow = stripLiteralsAndComments(sql);
   if (shadow.includes(";")) {
-    throw new Error("запрещено: несколько SQL-стейтментов в одном запросе");
+    throw new Error("forbidden: multiple SQL statements in one query");
   }
   if (!/^\s*(select|with)\b/i.test(shadow)) {
-    throw new Error("запрещено: разрешён только SELECT (или WITH … SELECT)");
+    throw new Error("forbidden: only SELECT (or WITH … SELECT) is allowed");
   }
   const forbidden = shadow.match(FORBIDDEN_SQL);
   if (forbidden) {
-    throw new Error(`запрещено: оператор ${forbidden[0].toUpperCase()} — только read-only SELECT`);
+    throw new Error(`forbidden: ${forbidden[0].toUpperCase()} operator — read-only SELECT only`);
   }
   return sql;
 }
 
 // ---------------------------------------------------------------------------
-// Парсинг строгого JSON одной sql-карточки
+// Strict JSON parsing for a single sql card
 // ---------------------------------------------------------------------------
 
 const sqlCardSchema = z.object({
@@ -144,7 +144,7 @@ function parseSqlCard(raw: unknown): GeneratedSql {
   };
 }
 
-/** Одна sql-карточка; обёртки {"cards": [...]} и легаси-формы тоже принимаются. */
+/** One sql card; {"cards": [...]} wrappers and legacy shapes also accepted. */
 function parseSingleSqlAnswer(content: string): GeneratedSql {
   const raw: unknown = JSON.parse(extractJsonObject(content));
   const inner =
@@ -155,7 +155,7 @@ function parseSingleSqlAnswer(content: string): GeneratedSql {
 }
 
 // ---------------------------------------------------------------------------
-// Промпт — generic, всё знание о данных приходит из schema context
+// Prompt — generic, all data knowledge comes from schema context
 // ---------------------------------------------------------------------------
 
 const SQL_RULES = `## SQL rules (mandatory)
@@ -229,10 +229,10 @@ function buildUserPrompt(input: GenerateCardSqlInput): string {
 }
 
 // ---------------------------------------------------------------------------
-// Публичные функции: генерация, починка, вердикт
+// Public functions: generation, healing, verdict
 // ---------------------------------------------------------------------------
 
-/** SQL для ОДНОЙ назначенной карточки (основная модель, ярус main). */
+/** SQL for ONE assigned card (main model, main tier). */
 export async function generateCardSql(
   input: GenerateCardSqlInput,
 ): Promise<GeneratedSql> {
@@ -247,17 +247,17 @@ export async function generateCardSql(
 }
 
 export type HealSqlInput = GenerateCardSqlInput & {
-  /** Предыдущая генерация, чей SQL упал. */
+  /** Previous generation whose SQL failed. */
   previous: GeneratedSql;
-  /** Полный текст ошибки ClickHouse (или валидации ViewSpec). */
+  /** Full ClickHouse error text (or ViewSpec validation error). */
   error: string;
-  /** Номер неудачной попытки (1..MAX_SQL_ATTEMPTS-1). */
+  /** Failed attempt number (1..MAX_SQL_ATTEMPTS-1). */
   attempt: number;
 };
 
 /**
- * B5 — самопочинка: исходный вопрос + прежний SQL + полный текст ошибки →
- * исправленный SQL в том же строгом JSON-формате.
+ * B5 — self-healing: original question + previous SQL + full error text →
+ * fixed SQL in the same strict JSON format.
  */
 export async function healSql(input: HealSqlInput): Promise<GeneratedSql> {
   const healMessage = [
@@ -292,10 +292,10 @@ export type CardAnnotation = {
 };
 
 /**
- * Аннотация карточки ПОСЛЕ исполнения SQL: короткий вызов быстрого яруса по
- * ФАКТИЧЕСКИМ строкам результата. insight — вывод аналитика с цифрами,
- * metricNote — что именно посчитано (агрегация/фильтры/период — из SQL).
- * Сбой — на вызывающем: карточка без аннотации валидна.
+ * Card annotation AFTER SQL execution: short fast-tier call on
+ * ACTUAL result rows. insight — analyst takeaway with numbers,
+ * metricNote — what was computed (aggregation/filters/period — from SQL).
+ * Failure — on caller: card without annotation is valid.
  */
 export async function annotateCard(input: {
   question: string;
@@ -303,7 +303,7 @@ export async function annotateCard(input: {
   sql: string;
   rows: Record<string, unknown>[];
 }): Promise<CardAnnotation> {
-  // Модели хватает сэмпла: первые строки + честный счётчик всего.
+  // Sample is enough for the model: first rows + honest total count.
   const sample = input.rows.slice(0, 40);
   const parsed = await askAndParse(
     [
@@ -347,9 +347,9 @@ const verdictSummarySchema = z.object({
 export type VerdictSummary = z.infer<typeof verdictSummarySchema>;
 
 /**
- * Второй короткий LLM-вызов для kind=verdict: по фактическим агрегатам из
- * ClickHouse пишет вывод и уверенность. Фоллбек при сбое — на вызывающем
- * (title + confidence 'low'), конвейер из-за вердикта не падает.
+ * Second short LLM call for kind=verdict: from actual ClickHouse aggregates
+ * writes verdict and confidence. Fallback on failure — on caller
+ * (title + confidence 'low'), pipeline does not fail because of verdict.
  */
 export async function summarizeVerdict(input: {
   question: string;

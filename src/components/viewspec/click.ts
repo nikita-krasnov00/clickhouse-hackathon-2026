@@ -1,22 +1,22 @@
 /**
- * Сборка ClickContext из ClickTarget — строго по семантике контрактов
- * (см. src/lib/contracts/view-spec.ts, блок ClickTarget):
+ * Build ClickContext from ClickTarget — strictly per contract semantics
+ * (see src/lib/contracts/view-spec.ts, ClickTarget block):
  *
- *  - selection = поля кликнутого элемента, перечисленные в target.selectionKeys,
- *    под теми же именами; null/undefined-значения опускаются;
- *  - action    = всегда 'why' (v2: дриллы удалены, клик — новый ран агента).
+ *  - selection = fields of the clicked element listed in target.selectionKeys,
+ *    under the same names; null/undefined values are omitted;
+ *  - action    = always 'why' (v2: drills removed, click — new agent run).
  *
- * Доступные поля элемента фиксированы по виду:
+ * Available element fields are fixed per kind:
  *   point  → timeline: { t, v, series }; scatter: { x, y, label? };
  *            map: { lat, lon, value?, label? }
- *   row    → ключи columns карточки (значения row[key])
- *   bucket → { label, count } (histogram и funnel-этапы)
+ *   row    → card column keys (values row[key])
+ *   bucket → { label, count } (histogram and funnel stages)
  *   cell   → { x, y, value }
  *   tile   → { label, value, group? } (treemap)
- *   box    → { label, med } (группа boxplot)
+ *   box    → { label, med } (boxplot group)
  *
- * Чистая функция без React — используется всеми компонентами C4/C5 и
- * проверяется юнит-логикой.
+ * Pure function without React — used by all C4/C5 components and covered by
+ * unit logic tests.
  */
 import type {
   BoxplotGroup,
@@ -32,7 +32,7 @@ import type {
   ViewKind,
 } from "@/lib/contracts";
 
-/** Плоские поля кликнутого элемента до фильтрации по selectionKeys. */
+/** Flat fields of the clicked element before filtering by selectionKeys. */
 export type ClickableElementFields = Record<
   string,
   string | number | null | undefined
@@ -60,7 +60,7 @@ export function buildClickContext(args: {
   };
 }
 
-/** point → t, v, series (имя серии, содержащей точку). */
+/** point → t, v, series (name of the series containing the point). */
 export function pointElementFields(
   point: SeriesPoint,
   seriesName: string,
@@ -68,19 +68,19 @@ export function pointElementFields(
   return { t: point.t, v: point.v, series: seriesName };
 }
 
-/** row → любой key из columns; строка и так плоская запись по этим ключам. */
+/** row → any key from columns; the row is already a flat record by those keys. */
 export function rowElementFields(row: Row): ClickableElementFields {
   return row;
 }
 
-/** point в scatter → x, y, label (label может отсутствовать — ключ опустится). */
+/** scatter point → x, y, label (label may be absent — key is omitted). */
 export function scatterPointElementFields(
   point: ScatterPoint,
 ): ClickableElementFields {
   return { x: point.x, y: point.y, label: point.label };
 }
 
-/** point на карте → lat, lon, value, label (отсутствующие ключи опускаются). */
+/** map point → lat, lon, value, label (missing keys are omitted). */
 export function mapPointElementFields(point: MapPoint): ClickableElementFields {
   return { lat: point.lat, lon: point.lon, value: point.value, label: point.label };
 }
@@ -95,17 +95,17 @@ export function cellElementFields(cell: HeatmapCell): ClickableElementFields {
   return { x: cell.x, y: cell.y, value: cell.value };
 }
 
-/** tile → label, value, group (group может отсутствовать — ключ опустится). */
+/** tile → label, value, group (group may be absent — key is omitted). */
 export function tileElementFields(item: TreemapItem): ClickableElementFields {
   return { label: item.label, value: item.value, group: item.group };
 }
 
-/** box → label, med (медиана — самое информативное число группы). */
+/** box → label, med (median — the most informative number for the group). */
 export function boxElementFields(group: BoxplotGroup): ClickableElementFields {
   return { label: group.label, med: group.med };
 }
 
-/** Первая клик-цель данного класса элементов, если объявлена в спеке. */
+/** First click target of the given element class, if declared in the spec. */
 export function findClickTarget(
   clicks: ClickTarget[],
   on: ClickTarget["on"],

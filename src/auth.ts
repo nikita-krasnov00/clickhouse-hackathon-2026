@@ -1,13 +1,13 @@
 /**
- * Аутентификация фронтенда: вход через Google (NextAuth v5, JWT-сессии).
+ * Frontend authentication: Google sign-in (NextAuth v5, JWT sessions).
  *
- * Публичный деплой остаётся по одной ссылке для жюри, но /api/ask больше
- * нельзя дёргать анонимно (LLM-токены, ClickHouse). Сессия — подписанный
- * JWT в httpOnly-cookie, базы данных не требует. AUTH_ALLOWED_EMAILS
- * сужает вход до списка; пустой список — любой Google-аккаунт.
+ * The public deploy stays a single link for judges, but /api/ask can no
+ * longer be called anonymously (LLM tokens, ClickHouse). The session is a
+ * signed JWT in an httpOnly cookie; no database required. AUTH_ALLOWED_EMAILS
+ * restricts sign-in to a list; an empty list allows any Google account.
  *
- * Конфиг ленивый (функцией): env валидируются на первый запрос,
- * а не при next build — сборка без секретов не падает.
+ * Lazy config (as a function): env is validated on the first request,
+ * not during next build — the build succeeds without secrets.
  */
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
@@ -25,7 +25,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
   callbacks: {
     signIn({ profile }) {
       const email = profile?.email?.toLowerCase();
-      // Google отдаёт email_verified; непроверенный email не пускаем.
+      // Google provides email_verified; reject unverified emails.
       if (!email || profile?.email_verified === false) return false;
       const allowed = config.auth.allowedEmails;
       return allowed.length === 0 || allowed.includes(email);

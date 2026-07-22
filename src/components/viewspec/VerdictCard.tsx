@@ -1,7 +1,7 @@
 /**
- * VerdictCard (C4) — финал расследования: вердикт крупно, badge уверенности
- * (low/medium/high — цветовая шкала со значком, не только цвет), стат-тайлы
- * evidence (label/value/detail).
+ * VerdictCard (C4) — investigation finale: verdict prominently, confidence badge
+ * (low/medium/high — color scale with icon, not color alone), evidence stat tiles
+ * (label/value/detail).
  */
 import type { VerdictSpec } from "@/lib/contracts";
 

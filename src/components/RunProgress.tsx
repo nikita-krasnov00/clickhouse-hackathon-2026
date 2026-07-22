@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * C2 — видимый прогресс конвейера investigate.
+ * C2 — visible investigate pipeline progress.
  *
- * Таймлайн шагов RunStep с подписями RUN_STEP_LABELS («Изучаю схему →
- * Продумываю запросы → Выполняю…»): пройденные шаги — галочка, текущий —
- * спиннер и «думающие» точки (LLM думает 5–30 с — ожидание анимировано, не
- * мёртвый экран), healing — заметный жёлтый шаг с номером попытки и текстом
- * ошибки, error — красный. SQL-сэмплы показываются В САМИХ шагах: executing /
- * reviewing / card_ready несут sqlPreview|sql — под шагом раскрывающийся
- * моноширинный блок; board_planned перечисляет запланированные карточки.
+ * RunStep timeline with RUN_STEP_LABELS ("Exploring schema → Planning queries →
+ * Executing…"): completed steps — checkmark, current — spinner and "thinking"
+ * dots (LLM thinks 5–30 s — wait is animated, not a dead screen), healing —
+ * prominent yellow step with attempt number and error text, error — red. SQL
+ * samples are shown IN THE STEPS THEMSELVES: executing / reviewing / card_ready
+ * carry sqlPreview|sql — collapsible monospace block under the step; board_planned
+ * lists planned cards.
  */
 import { runStepLabel, type AnswerLanguage, type RunStep } from "@/lib/contracts";
 import type { InvestigationPhase } from "@/lib/hooks/useInvestigationRun";
@@ -23,7 +23,7 @@ function Spinner() {
   );
 }
 
-/** Три «думающие» точки — анимация ожидания у активного шага. */
+/** Three "thinking" dots — wait animation on the active step. */
 function ThinkingDots() {
   return (
     <span aria-hidden className="ml-1 inline-flex gap-0.5">
@@ -77,7 +77,7 @@ function StepIcon({ step, isActive }: { step: RunStep; isActive: boolean }) {
   }
 }
 
-/** SQL-сэмпл шага: раскрывающийся моноширинный блок прямо под шагом. */
+/** Step SQL sample: collapsible monospace block directly under the step. */
 function StepSql({ sql, open }: { sql: string; open?: boolean }) {
   const firstLine = sql.replace(/\s+/g, " ").trim();
   return (
@@ -107,7 +107,7 @@ function StepRow({
   const label = runStepLabel(step.step, language);
   const isHealing = step.step === "healing";
   const isError = step.step === "error";
-  // Сэмпл SQL шага: executing/reviewing несут sqlPreview, card_ready — sql.
+  // Step SQL sample: executing/reviewing carry sqlPreview, card_ready — sql.
   const stepSql =
     step.step === "executing" || step.step === "reviewing"
       ? step.sqlPreview
@@ -167,7 +167,7 @@ function StepRow({
         {step.step !== "error" && !isHealing && step.message && (
           <p className="mt-0.5 text-[10px] text-muted">{truncate(step.message)}</p>
         )}
-        {/* План дашборда: какие карточки каких видов. */}
+        {/* Dashboard plan: which cards of which kinds. */}
         {step.step === "board_planned" && step.cards.length > 0 && (
           <ul className="mt-1 flex flex-col gap-0.5">
             {step.cards.map((c) => (

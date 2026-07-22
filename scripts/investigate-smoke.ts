@@ -1,16 +1,16 @@
 /**
- * B3/B4 живьём без Trigger: `npm run investigate:smoke`.
- * Гоняет конвейер investigate (pipeline.ts) — dataset-agnostic v2: каталог
- * таблиц → триаж → board_planned → карточки — на вопросах, покрывающих разные
- * виды карточек И все содержательные базы инстанса (github, tpcds,
- * stackoverflow), против реального ClickHouse: шаги и SQL печатаются в stdout,
- * финальный ViewSpec валиден (viewSpecSchema.parse внутри конвейера +
- * контрольный parse здесь).
+ * B3/B4 live without Trigger: `npm run investigate:smoke`.
+ * Runs the investigate pipeline (pipeline.ts) — dataset-agnostic v2: table catalog
+ * → triage → board_planned → cards — on questions covering different card kinds
+ * AND all substantive instance databases (github, tpcds, stackoverflow),
+ * against real ClickHouse: steps and SQL print to stdout,
+ * final ViewSpec is valid (viewSpecSchema.parse inside the pipeline +
+ * a sanity parse here).
  *
- * DEFAULT_QUESTIONS — заведомо отвечаемые: ран, закончившийся clarify/impossible
- * или без единой карточки, — провал смоука (см. main). Для СВОИХ вопросов
- * (`npm run investigate:smoke -- "ваш вопрос"`, можно несколько) clarify и
- * impossible — валидные исходы: агент честно не угадывает и не выдумывает.
+ * DEFAULT_QUESTIONS are known-answerable: a run ending in clarify/impossible
+ * or with zero cards is a smoke failure (see main). For YOUR questions
+ * (`npm run investigate:smoke -- "your question"`, multiple allowed) clarify and
+ * impossible are valid outcomes: the agent honestly does not guess or fabricate.
  */
 import { runInvestigatePipeline } from "../src/lib/agent/pipeline";
 import { viewSpecSchema, type RunStep, type ViewSpec } from "../src/lib/contracts";
@@ -37,7 +37,7 @@ function printStep(step: RunStep) {
       );
       break;
     case "healing":
-      console.log(`  → healing (попытка ${step.attempt}): ${short(step.error ?? "", 300)}`);
+      console.log(`  → healing (attempt ${step.attempt}): ${short(step.error ?? "", 300)}`);
       break;
     case "board_planned":
       console.log(
@@ -46,12 +46,12 @@ function printStep(step: RunStep) {
       break;
     case "clarify":
       console.log(
-        `  → clarify: ${step.question}${step.options ? ` [варианты: ${step.options.join(", ")}]` : ""}`,
+        `  → clarify: ${step.question}${step.options ? ` [options: ${step.options.join(", ")}]` : ""}`,
       );
       break;
     case "impossible":
       console.log(
-        `  → impossible: ${step.reason}${step.available ? ` [доступно: ${step.available.join(", ")}]` : ""}`,
+        `  → impossible: ${step.reason}${step.available ? ` [available: ${step.available.join(", ")}]` : ""}`,
       );
       break;
     case "card_failed":
@@ -67,14 +67,14 @@ function printStep(step: RunStep) {
   }
 }
 
-/** Урезанный вид ViewSpec для stdout (полные rows/points/cells — шум). */
+/** Truncated ViewSpec for stdout (full rows/points/cells are noise). */
 function preview(spec: ViewSpec): unknown {
   switch (spec.kind) {
     case "leaderboard":
       return {
         ...spec,
         rows: spec.rows.slice(0, 5),
-        _truncated: `${spec.rows.length} строк всего, показаны первые 5`,
+        _truncated: `${spec.rows.length} rows total, showing first 5`,
       };
     case "timeline":
       return {
@@ -82,23 +82,23 @@ function preview(spec: ViewSpec): unknown {
         series: spec.series.map((s) => ({
           name: s.name,
           points: s.points.slice(0, 5),
-          _truncated: `${s.points.length} точек всего, показаны первые 5`,
+          _truncated: `${s.points.length} points total, showing first 5`,
         })),
       };
     case "histogram":
       return {
         ...spec,
         buckets: spec.buckets.slice(0, 10),
-        _truncated: `${spec.buckets.length} корзин всего, показаны первые 10`,
+        _truncated: `${spec.buckets.length} buckets total, showing first 10`,
       };
     case "heatmap":
       return {
         ...spec,
         cells: spec.cells.slice(0, 10),
-        _truncated: `${spec.cells.length} ячеек всего, показаны первые 10`,
+        _truncated: `${spec.cells.length} cells total, showing first 10`,
       };
     default:
-      return spec; // verdict и прочие — компактны сами по себе
+      return spec; // verdict and others are compact on their own
   }
 }
 
@@ -109,9 +109,9 @@ async function main() {
   const failures: string[] = [];
 
   for (const question of questions) {
-    console.log(`\n=== Вопрос: ${question}`);
-    // Запоминаем, чем закончился триаж — нужно для честного сообщения о
-    // провале, если DEFAULT_QUESTIONS вдруг не долетел до карточек.
+    console.log(`\n=== Question: ${question}`);
+    // Remember how triage ended — needed for an honest failure message if
+    // DEFAULT_QUESTIONS did not reach cards.
     let terminal: "clarify" | "impossible" | undefined;
     try {
       const result = await runInvestigatePipeline(
@@ -124,30 +124,30 @@ async function main() {
         },
       );
 
-      // Контрольная валидация уже снаружи конвейера.
+      // Sanity validation outside the pipeline too.
       for (const spec of result.viewSpecs) {
         viewSpecSchema.parse(spec);
       }
 
-      // DEFAULT_QUESTIONS заведомо отвечаемые — 0 карточек всегда провал.
-      // Для СВОИХ вопросов (usingDefaults === false) clarify/impossible —
-      // валидный честный исход, не провал: ниже до throw дело не доходит.
+      // DEFAULT_QUESTIONS are known-answerable — 0 cards is always a failure.
+      // For YOUR questions (usingDefaults === false) clarify/impossible are
+      // valid honest outcomes — no throw below.
       if (usingDefaults && result.viewSpecs.length === 0) {
         const cause = terminal
-          ? ` — ран закончился шагом "${terminal}" (для заведомо отвечаемого вопроса это баг триажа)`
+          ? ` — run ended with step "${terminal}" (for a known-answerable question this is a triage bug)`
           : "";
-        throw new Error(`0 ViewSpec, карточек не получилось${cause}`);
+        throw new Error(`0 ViewSpec, no cards produced${cause}`);
       }
 
       console.log(
-        `  результат: ${result.viewSpecs.length} ViewSpec (валидны), попыток SQL: ${result.attempts}`,
+        `  result: ${result.viewSpecs.length} ViewSpec (valid), SQL attempts: ${result.attempts}`,
       );
       console.log(`  SQL: ${result.sql}`);
       console.log(JSON.stringify(result.viewSpecs.map(preview), null, 2));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       failures.push(`«${question}»: ${message}`);
-      console.error(`  ПРОВАЛ: ${message}`);
+      console.error(`  FAILED: ${message}`);
     }
   }
 

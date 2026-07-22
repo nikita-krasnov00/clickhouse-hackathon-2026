@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
-    // Аватар Google-аккаунта в шапке (UserBadge).
+    // Google account avatar in the header (UserBadge).
     remotePatterns: [
       { protocol: "https", hostname: "*.googleusercontent.com" },
     ],

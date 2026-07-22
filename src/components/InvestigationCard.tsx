@@ -1,22 +1,21 @@
 "use client";
 
 /**
- * C2 — карточка расследования одного рана investigate.
+ * C2 — investigation card for a single investigate run.
  *
- * Вопрос → подписка useRealtimeRun (через useInvestigationRun) → живой
- * прогресс конвейера (RunProgress) → карточки данных, в зависимости от того,
- * как сложился ран:
- *   - board_planned → сетка BoardGrid: скелеты по манифесту, гидратирующиеся
- *                      в ViewSpecCard по мере card_ready/card_failed;
- *   - clarify        → ClarifyCard: агенту не хватило вводных, ран завершён;
- *   - impossible      → ImpossibleCard: по данным ответить нельзя, ран завершён;
- *   - иначе (старые/потерянные стримы без манифеста) → фоллбек на viewSpecs,
- *     как раньше.
- * done остаётся сворачивающим прогресс в details «как я это делал»; error —
- * фоллбек «не смог — вот что пробовал»: список попыток healing, финальное
- * сообщение и последний SQL — не пустой экран.
+ * Question → useRealtimeRun subscription (via useInvestigationRun) → live pipeline
+ * progress (RunProgress) → data cards depending on how the run ended:
+ *   - board_planned → BoardGrid: skeletons from manifest, hydrating into
+ *                      ViewSpecCard as card_ready/card_failed arrive;
+ *   - clarify        → ClarifyCard: agent lacked input, run finished;
+ *   - impossible      → ImpossibleCard: cannot answer from data, run finished;
+ *   - otherwise (old/lost streams without manifest) → fallback to viewSpecs,
+ *     as before.
+ * done keeps progress collapsible in details "how I did it"; error —
+ * fallback "couldn't finish — here's what I tried": healing attempts list,
+ * final message and last SQL — not a blank screen.
  *
- * Если /api/ask вернул ошибку (runId нет) — карточка сразу в failed.
+ * If /api/ask returned an error (no runId) — card is immediately failed.
  */
 import {
   detectAnswerLanguage,
@@ -39,18 +38,18 @@ import {
 } from "@/components/viewspec/ViewSpecCard";
 
 export type Investigation = {
-  /** Локальный id карточки в ленте (не runId). */
+  /** Local card id in the feed (not runId). */
   id: string;
   question: string;
-  /** Момент отправки вопроса — от него считается секундомер. */
+  /** Moment the question was sent — stopwatch counts from here. */
   askedAt: number;
   runId?: string;
   publicAccessToken?: string;
-  /** Ошибка /api/ask — ран не создан. */
+  /** /api/ask error — run was not created. */
   askError?: string;
 };
 
-/** Стиль бейджа фазы — от языка не зависит. */
+/** Phase badge style — independent of language. */
 const PHASE_BADGE: Record<
   InvestigationRunState["phase"],
   { className: string; style?: React.CSSProperties }
@@ -61,7 +60,7 @@ const PHASE_BADGE: Record<
   failed: { className: "border-border", style: { color: "var(--viz-critical)" } },
 };
 
-/** Подпись бейджа фазы на языке рана. */
+/** Phase badge label in the run's language. */
 const PHASE_LABEL: Record<AnswerLanguage, Record<InvestigationRunState["phase"], string>> = {
   Russian: {
     connecting: "запускаю",
@@ -77,7 +76,7 @@ const PHASE_LABEL: Record<AnswerLanguage, Record<InvestigationRunState["phase"],
   },
 };
 
-/** Фоллбек терминальной неудачи: «не смог — вот что пробовал». */
+/** Terminal failure fallback: "couldn't finish — here's what I tried". */
 export function FailedFallback({
   state,
   askError,
@@ -125,23 +124,23 @@ export function InvestigationCard({
 }: {
   investigation: Investigation;
   onClickContext?: SpecClickHandler;
-  /** C2: клик по чипу clarify/impossible — новый ран тем же submit-флоу Workbench. */
+  /** C2: clarify/impossible chip click — new run via same Workbench submit flow. */
   onAsk?: (question: string) => void;
 }) {
   const { id, question, askedAt, runId, publicAccessToken, askError } = investigation;
   const state = useInvestigationRun(runId, publicAccessToken);
 
-  // Язык рана — по тексту вопроса, тот же сигнал, что управляет ответом.
-  // Ризонинг (лента, бейджи, обёртки) говорит на языке ответа.
+  // Run language — from question text, same signal that drives the answer.
+  // Reasoning (feed, badges, wrappers) speaks the answer language.
   const language = detectAnswerLanguage(question);
 
-  // Ошибка /api/ask — рана нет, карточка сразу терминальная.
+  // /api/ask error — no run, card is immediately terminal.
   const phase = askError ? "failed" : state.phase;
   const isLive = phase === "connecting" || phase === "running";
   const elapsed = useElapsedSeconds(askedAt, isLive);
   const badge = PHASE_BADGE[phase];
 
-  // Два ранних терминальных исхода — взаимоисключающи и исключают board_planned.
+  // Two early terminal outcomes — mutually exclusive and exclude board_planned.
   const clarifyStep = state.steps.find(
     (s): s is Extract<RunStep, { step: "clarify" }> => s.step === "clarify",
   );
@@ -174,7 +173,7 @@ export function InvestigationCard({
         </p>
       )}
 
-      {/* Прогресс конвейера: живой — развёрнут; done — свёрнут в details. */}
+      {/* Pipeline progress: live — expanded; done — collapsed in details. */}
       {!askError && phase !== "done" && (
         <div className="mt-3">
           <RunProgress steps={state.steps} phase={phase} language={language} />
@@ -197,7 +196,7 @@ export function InvestigationCard({
         <FailedFallback state={state} askError={askError} language={language} />
       )}
 
-      {/* clarify/impossible — ранние терминальные исходы, до board_planned. */}
+      {/* clarify/impossible — early terminal outcomes, before board_planned. */}
       {!askError && clarifyStep && (
         <ClarifyCard
           step={clarifyStep}
@@ -210,12 +209,12 @@ export function InvestigationCard({
         <ImpossibleCard step={impossibleStep} onAsk={onAsk} language={language} />
       )}
 
-      {/* Манифест есть — сетка скелетов/карточек на его местах (C2). */}
+      {/* Manifest present — skeleton/card grid in manifest slots (C2). */}
       {!askError && !clarifyStep && !impossibleStep && state.boardCards.length > 0 && (
         <BoardGrid cards={state.boardCards} onClickContext={onClickContext} />
       )}
 
-      {/* Манифеста не было (старые/потерянные стримы) — как раньше, по viewSpecs. */}
+      {/* No manifest (old/lost streams) — as before, from viewSpecs. */}
       {!askError &&
         !clarifyStep &&
         !impossibleStep &&

@@ -1,6 +1,6 @@
 /**
- * Страница «Insight Desk»: живое рабочее место (C2) — композер → POST /api/ask →
- * карточки расследований с Realtime-прогрессом конвейера и view-spec карточками.
+ * "Insight Desk" page: live workbench (C2) — composer → POST /api/ask →
+ * investigation cards with Realtime pipeline progress and view-spec cards.
  */
 import { UserBadge } from "@/components/UserBadge";
 import { Workbench } from "@/components/Workbench";

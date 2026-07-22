@@ -1,33 +1,33 @@
 /**
- * B2 — exploration, двухфазная и без единого захардкоженного имени таблицы.
+ * B2 — exploration, two-phase and with no single hardcoded table name.
  *
- * Фаза A — catalogTables(): дешёвый каталог ВСЕХ таблиц, видимых agent_ro
- * (system.tables + system.columns, без статистики и сэмплов — сотни
- * миллисекунд). Каталог уходит в триаж (triage.ts): КАКИЕ таблицы относятся
- * к вопросу, решает LLM в момент запроса — никакой «приоритетной таблицы»
- * из конфига больше нет. Гранты agent_ro = скоуп агента.
+ * Phase A — catalogTables(): cheap catalog of ALL tables visible to agent_ro
+ * (system.tables + system.columns, no statistics or samples — hundreds of
+ * milliseconds). Catalog goes to triage (triage.ts): WHICH tables relate to
+ * the question is decided by the LLM at request time — no "priority table"
+ * from config anymore. agent_ro grants = agent scope.
  *
- * Фаза B — exploreTables(): глубокая разведка ТОЛЬКО выбранных триажем таблиц:
- *   - колонка даты — эвристика: первая колонка типа Date/DateTime* с
- *     предпочтением имён created_at → *_at → date/time/day/ts;
- *   - ключевые колонки — до MAX_KEY_COLUMNS: Enum* и LowCardinality(String)
- *     в порядке схемы, добор — String с малым uniq по сэмплу; для каждой
- *     считаются кардинальность и топ значений. Дорогие uniq на таблицах
- *     >BIG_TABLE_ROWS строк — по LIMIT-сэмплу, топ-N — только для
- *     низкокардинальных колонок; всё с бюджетом времени (break, не ошибка);
- *   - min/max даты и 3 сэмпл-строки.
+ * Phase B — exploreTables(): deep exploration of ONLY triage-selected tables:
+ *   - date column — heuristic: first Date/DateTime* column with
+ *     preference for names created_at → *_at → date/time/day/ts;
+ *   - key columns — up to MAX_KEY_COLUMNS: Enum* and LowCardinality(String)
+ *     in schema order, fill — String with low uniq from sample; for each
+ *     cardinality and top values are computed. Expensive uniq on tables
+ *     >BIG_TABLE_ROWS rows — via LIMIT sample, top-N — only for
+ *     low-cardinality columns; all with time budget (break, not error);
+ *   - min/max dates and 3 sample rows.
  *
- * Персистентного кэша НЕТ: вся информация и так живёт в ClickHouse; только
- * короткая мемоизация каталога в памяти процесса (getCatalog), чтобы
- * параллельные раны в одном воркере не дублировали одинаковые запросы.
- * Контекст читают конвейер investigate (pipeline.ts) и промпты триажа и
- * text-to-SQL (triage.ts, generate-sql.ts).
+ * NO persistent cache: all information already lives in ClickHouse; only
+ * short in-process catalog memoization (getCatalog), so parallel runs in
+ * one worker do not duplicate identical queries.
+ * Context is read by the investigate pipeline (pipeline.ts) and triage and
+ * text-to-SQL prompts (triage.ts, generate-sql.ts).
  */
 import type { ClickHouseClient } from "@clickhouse/client";
 import { createReadonlyClient } from "@/lib/clickhouse";
 
 // ---------------------------------------------------------------------------
-// Форма контекста
+// Context shape
 // ---------------------------------------------------------------------------
 
 export type ColumnInfo = { name: string; type: string; comment?: string };
@@ -40,80 +40,80 @@ export type KeyColumnStats = {
   top: TopValue[];
 };
 
-/** Компактный JSON-контекст одной таблицы — уходит в промпт LLM как есть. */
+/** Compact JSON context for one table — sent to the LLM prompt as-is. */
 export type SchemaContext = {
   table: string;
   rowCount: number;
   /**
-   * ORDER BY / первичный ключ таблицы. КРИТИЧНО для скорости: индекс MergeTree
-   * прунит гранулы только при фильтре по ПРЕФИКСУ этого ключа — LLM обязан это
-   * учитывать (см. правила перформанса в generate-sql.ts).
+   * Table ORDER BY / primary key. CRITICAL for speed: MergeTree index
+   * prunes granules only when filtering by a PREFIX of this key — LLM must
+   * account for this (see performance rules in generate-sql.ts).
    */
   sortingKey: string[];
-  /** Пустая строка, если в таблице нет колонок Date/DateTime*. */
+  /** Empty string if the table has no Date/DateTime* columns. */
   dateColumn: string;
   dateRange: { min: string; max: string };
   columns: ColumnInfo[];
   keyColumns: KeyColumnStats[];
-  /** 3 строки-примера; поля с дефолтными значениями опущены ради токенов. */
+  /** 3 sample rows; fields with default values omitted to save tokens. */
   sampleRows: Record<string, unknown>[];
 };
 
 // ---------------------------------------------------------------------------
-// Параметры обнаружения
+// Discovery parameters
 // ---------------------------------------------------------------------------
 
-/** Сколько таблиц максимум попадает в контекст legacy-прохода exploreSchema. */
+/** Max tables in legacy exploreSchema pass context. */
 const MAX_TABLES = 5;
-/** Потолок каталога фазы A — защита промпта триажа от гигантских инстансов. */
+/** Phase A catalog cap — protects triage prompt from giant instances. */
 const MAX_CATALOG_TABLES = 40;
-/** Потолок глубокой разведки фазы B — триаж не должен выбирать больше. */
+/** Phase B deep exploration cap — triage must not select more. */
 export const MAX_DEEP_TABLES = 4;
-/** Сколько ключевых (низкокардинальных) колонок берём на таблицу. */
+/** How many key (low-cardinality) columns per table. */
 const MAX_KEY_COLUMNS = 3;
-/** Сколько топ-значений собираем по каждой ключевой колонке. */
+/** How many top values per key column. */
 const KEY_TOP_N = 30;
-/** Сколько таблиц исследуем одновременно (см. комментарий в exploreSchema). */
+/** How many tables to explore concurrently (see comment in exploreSchema). */
 const EXPLORE_CONCURRENCY = 2;
-/** С этого размера uniq считаем не по всей таблице, а по LIMIT-сэмплу. */
+/** From this size uniq is computed on a LIMIT sample, not the whole table. */
 const BIG_TABLE_ROWS = 10_000_000;
-/** Размер LIMIT-сэмпла для оценок uniq (SAMPLE требует ключа сэмплирования). */
+/** LIMIT sample size for uniq estimates (SAMPLE requires a sampling key). */
 const UNIQ_SAMPLE_ROWS = 500_000;
-/** String-колонка попадает в ключевые, если её uniq по сэмплу не больше этого. */
+/** String column enters key columns if its sample uniq is at most this. */
 const LOW_UNIQ_THRESHOLD = 200;
 /**
- * Топ-N с частотами (GROUP BY) считаем только для колонок с кардинальностью
- * не выше этого порога. GROUP BY по высококардинальной колонке (repo_name —
- * 35M уникальных) на 150M строк сканирует всю таблицу за 10-13с и рискует
- * таймаутом; такой колонке отдаём только оценку кардинальности, а примеры
- * значений LLM видит в сэмпл-строках.
+ * Top-N with frequencies (GROUP BY) computed only for columns with cardinality
+ * at most this threshold. GROUP BY on a high-cardinality column (repo_name —
+ * 35M unique) on 150M rows scans the whole table for 10-13s and risks
+ * timeout; such a column gets only a cardinality estimate, and the LLM sees
+ * example values in sample rows.
  */
 const TOPN_MAX_CARD = 1_000;
 /**
- * Страховка от таймаута: любой аналитический запрос exploration ограничен по
- * времени и при переполнении возвращает ЧАСТИЧНЫЙ результат (break), а не
- * ошибку. Так живое исследование под нагрузкой (например, во время заливки
- * данных) не роняет ран — в худшем случае статистика будет приблизительной.
+ * Timeout safety: any exploration analytics query is time-limited and on
+ * overflow returns a PARTIAL result (break), not an error. So live exploration
+ * under load (e.g. during data ingestion) does not kill the run — at worst
+ * statistics will be approximate.
  */
 const EXPLORE_SETTINGS = {
   max_execution_time: 20,
   timeout_overflow_mode: "break",
 } as const;
 
-/** Системные базы — не таблицы данных. */
+/** System databases — not data tables. */
 const SYSTEM_DATABASES = ["system", "information_schema", "INFORMATION_SCHEMA"];
-/** Служебные базы проекта (роллапы, лог LLM) — прячем от LLM. */
+/** Project service databases (rollups, LLM log) — hidden from LLM. */
 const HIDDEN_DATABASES = ["scratch"];
 
 // ---------------------------------------------------------------------------
-// Обнаружение таблиц
+// Table discovery
 // ---------------------------------------------------------------------------
 
 type DiscoveredTable = {
   database: string;
   name: string;
   totalRows: number;
-  /** Колонки ORDER BY / первичного ключа (для промпта и подсказок LLM). */
+  /** ORDER BY / primary key columns (for prompt and LLM hints). */
   sortingKey: string[];
 };
 
@@ -126,11 +126,11 @@ function parseSortingKey(raw: string): string[] {
 }
 
 /**
- * Непустые таблицы, видимые agent_ro (гранты = скоуп агента), без системных
- * баз, служебной scratch и View. Фильтр total_rows > 0 заодно отсекает
- * внешние движки вроде URL (total_rows NULL) — их count() ходил бы по сети.
- * sorting_key берём тут же — он бесплатен из system.tables и критичен для
- * подсказок LLM о прунинге по индексу.
+ * Non-empty tables visible to agent_ro (grants = agent scope), excluding system
+ * databases, scratch service DB, and Views. Filter total_rows > 0 also excludes
+ * external engines like URL (total_rows NULL) — their count() would go over the network.
+ * sorting_key fetched here — free from system.tables and critical for
+ * LLM hints about index pruning.
  */
 async function discoverTables(client: ClickHouseClient): Promise<DiscoveredTable[]> {
   const rs = await client.query({
@@ -160,21 +160,21 @@ async function discoverTables(client: ClickHouseClient): Promise<DiscoveredTable
 }
 
 // ---------------------------------------------------------------------------
-// Фаза A: каталог всех видимых таблиц (дёшево, для триажа)
+// Phase A: catalog of all visible tables (cheap, for triage)
 // ---------------------------------------------------------------------------
 
-/** Компактная запись каталога: триажу LLM хватает, чтобы выбрать таблицы. */
+/** Compact catalog entry: enough for triage LLM to pick tables. */
 export type CatalogTable = {
-  /** Полное имя `db.table`. */
+  /** Full name `db.table`. */
   table: string;
   rowCount: number;
   sortingKey: string[];
-  /** Эвристика: лучшая Date/DateTime*-колонка; пустая строка — нет такой. */
+  /** Heuristic: best Date/DateTime* column; empty string — none. */
   dateColumn: string;
   columns: ColumnInfo[];
 };
 
-/** Все колонки всех видимых таблиц ОДНИМ запросом: `db.table` → колонки. */
+/** All columns of all visible tables in ONE query: `db.table` → columns. */
 async function fetchAllColumns(
   client: ClickHouseClient,
 ): Promise<Map<string, ColumnInfo[]>> {
@@ -210,9 +210,9 @@ async function fetchAllColumns(
 }
 
 /**
- * Фаза A exploration: полный каталог видимых таблиц БЕЗ дорогой статистики —
- * только system.tables + system.columns (сотни миллисекунд на любом инстансе).
- * Читает триаж (triage.ts): LLM сам решает, какие таблицы относятся к вопросу.
+ * Phase A exploration: full catalog of visible tables WITHOUT expensive statistics —
+ * only system.tables + system.columns (hundreds of ms on any instance).
+ * Read by triage (triage.ts): LLM decides which tables relate to the question.
  */
 export async function catalogTables(
   client: ClickHouseClient,
@@ -238,10 +238,10 @@ export async function catalogTables(
 }
 
 // ---------------------------------------------------------------------------
-// Эвристики по типам и именам колонок
+// Column type and name heuristics
 // ---------------------------------------------------------------------------
 
-/** Снимает обёртки Nullable(...)/LowCardinality(...) до базового типа. */
+/** Strip Nullable(...)/LowCardinality(...) wrappers down to base type. */
 function unwrapType(type: string): string {
   let t = type;
   for (;;) {
@@ -255,19 +255,19 @@ function isDateType(type: string): boolean {
   return /^(Date|Date32|DateTime|DateTime64)\b/.test(unwrapType(type));
 }
 
-/** Enum* и LowCardinality(String): низкая кардинальность по конструкции типа. */
+/** Enum* and LowCardinality(String): low cardinality by type construction. */
 function isKeyCandidateByType(type: string): boolean {
   const base = unwrapType(type);
   if (/^Enum(8|16)?\b/.test(base)) return true;
   return base === "String" && type.includes("LowCardinality(");
 }
 
-/** Обычная String-колонка — кандидат в ключевые только при малом uniq. */
+/** Plain String column — key candidate only with low uniq. */
 function isPlainString(type: string): boolean {
   return unwrapType(type) === "String" && !type.includes("LowCardinality(");
 }
 
-/** Чем меньше — тем лучше имя подходит на роль колонки даты. */
+/** Lower score — better name for a date column role. */
 function dateNameScore(name: string): number {
   const n = name.toLowerCase();
   if (n === "created_at") return 0;
@@ -277,10 +277,10 @@ function dateNameScore(name: string): number {
 }
 
 /**
- * Колонка даты: лучшая Date/DateTime*-колонка по имени, при равенстве — первая
- * по порядку схемы. Пустая строка, если временнЫх колонок нет вовсе (например,
- * факт-таблицы звёздных схем держат дату числовым ключом *_sk на измерение —
- * это решает LLM по каталогу, не эвристика).
+ * Date column: best Date/DateTime* column by name, on tie — first in schema
+ * order. Empty string if no temporal columns at all (e.g. star-schema fact
+ * tables keep date as numeric *_sk key to dimension — LLM decides from catalog,
+ * not heuristic).
  */
 function pickDateColumn(columns: ColumnInfo[]): string {
   let best = "";
@@ -297,15 +297,15 @@ function pickDateColumn(columns: ColumnInfo[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Сбор контекста
+// Context assembly
 // ---------------------------------------------------------------------------
 
-/** Ужимает тип: `Enum8('a' = 1, 'b' = 2)` → `Enum8('a', 'b')` — литералы нужны LLM, номера нет. */
+/** Compact type: `Enum8('a' = 1, 'b' = 2)` → `Enum8('a', 'b')` — LLM needs literals, not numbers. */
 function compactType(type: string): string {
   return type.replace(/'\s*=\s*-?\d+/g, "'");
 }
 
-/** Сэмпл-строка без дефолтных значений; длинные строки обрезаны до 100 симв. */
+/** Sample row without default values; long strings truncated to 100 chars. */
 function compactSampleRow(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
@@ -313,7 +313,7 @@ function compactSampleRow(row: Record<string, unknown>): Record<string, unknown>
     if (value === "none" || value === "NONE") continue;
     if (Array.isArray(value) && value.length === 0) continue;
     if (typeof value === "string") {
-      if (value.startsWith("1970-01-01")) continue; // пустой DateTime
+      if (value.startsWith("1970-01-01")) continue; // empty DateTime
       out[key] = value.length > 100 ? `${value.slice(0, 100)}…` : value;
     } else {
       out[key] = value;
@@ -322,7 +322,7 @@ function compactSampleRow(row: Record<string, unknown>): Record<string, unknown>
   return out;
 }
 
-/** Колонки с типами (и комментарием, если он есть) из system.columns. */
+/** Columns with types (and comment if present) from system.columns. */
 async function fetchColumns(
   client: ClickHouseClient,
   database: string,
@@ -346,10 +346,10 @@ async function fetchColumns(
 }
 
 /**
- * Оценка uniq колонок: на больших таблицах — по LIMIT-сэмплу (дёшево и
- * ограниченно), на малых — точный uniqCombined по всей таблице. Одним запросом
- * на все колонки. Число приблизительное, но для промпта и для решения
- * «низкокардинальная ли колонка» этого достаточно.
+ * Column uniq estimate: on large tables — via LIMIT sample (cheap and
+ * bounded), on small — exact uniqCombined over the whole table. One query
+ * for all columns. Number is approximate, but enough for the prompt and for
+ * deciding "is this column low-cardinality".
  */
 async function estimateColumnUniq(
   client: ClickHouseClient,
@@ -374,8 +374,8 @@ async function estimateColumnUniq(
 }
 
 /**
- * Ключевые колонки: сперва Enum* и LowCardinality(String) в порядке схемы,
- * добор до MAX_KEY_COLUMNS — String-колонки с малым uniq (оценка по сэмплу).
+ * Key columns: first Enum* and LowCardinality(String) in schema order,
+ * fill to MAX_KEY_COLUMNS — String columns with low uniq (sample estimate).
  */
 async function pickKeyColumns(
   client: ClickHouseClient,
@@ -394,16 +394,16 @@ async function pickKeyColumns(
   const lowUniq = plain
     .filter((c) => {
       const u = uniq.get(c) ?? Infinity;
-      return u >= 2 && u <= LOW_UNIQ_THRESHOLD; // константы и «уникальные» не нужны
+      return u >= 2 && u <= LOW_UNIQ_THRESHOLD; // constants and "unique" not needed
     })
     .sort((a, b) => (uniq.get(a) ?? 0) - (uniq.get(b) ?? 0));
   return [...picked, ...lowUniq.slice(0, MAX_KEY_COLUMNS - picked.length)];
 }
 
 /**
- * Топ-N значений с частотами для одной ключевой колонки. Только для
- * низкокардинальных колонок (проверка вызывающим) — их GROUP BY даёт мало
- * групп и укладывается в бюджет; break — страховка от таймаута под нагрузкой.
+ * Top-N values with frequencies for one key column. Only for
+ * low-cardinality columns (checked by caller) — their GROUP BY yields few
+ * groups and fits the budget; break — timeout safety under load.
  */
 async function keyColumnTop(
   client: ClickHouseClient,
@@ -422,19 +422,19 @@ async function keyColumnTop(
 }
 
 type TableTarget = {
-  /** Полное имя `db.table`. */
+  /** Full name `db.table`. */
   table: string;
   database: string;
   name: string;
-  /** Приблизительный размер из system.tables — выбор стратегии uniq. */
+  /** Approximate size from system.tables — uniq strategy selection. */
   totalRows: number;
-  /** ORDER BY / первичный ключ (из discoverTables). */
+  /** ORDER BY / primary key (from discoverTables). */
   sortingKey: string[];
   /**
-   * Глубокое исследование (кардинальности + топ-N значений) — самые дорогие
-   * запросы exploration. В конвейере v2 глубоко исследуются ВСЕ выбранные
-   * триажем таблицы (их максимум MAX_DEEP_TABLES); в legacy-проходе
-   * exploreSchema — только самая большая.
+   * Deep exploration (cardinalities + top-N values) — most expensive
+   * exploration queries. In v2 pipeline ALL triage-selected tables are
+   * explored deeply (max MAX_DEEP_TABLES); in legacy exploreSchema pass —
+   * only the largest.
    */
   deep: boolean;
 };
@@ -443,16 +443,16 @@ async function exploreTable(
   client: ClickHouseClient,
   target: TableTarget,
 ): Promise<SchemaContext> {
-  // Колонки: имя + тип (+ comment) из system.columns.
+  // Columns: name + type (+ comment) from system.columns.
   const columns = await fetchColumns(client, target.database, target.name);
   if (columns.length === 0) {
-    throw new Error(`system.columns не вернул колонок для ${target.table}`);
+    throw new Error(`system.columns returned no columns for ${target.table}`);
   }
   const dateColumn = pickDateColumn(columns);
 
-  // Все независимые стадии — ПАРАЛЛЕЛЬНО (латентность = максимум, не сумма):
-  // min/max даты, сэмпл-строки, статистика ключевых колонок. count() не нужен —
-  // total_rows из system.tables бесплатен.
+  // All independent stages — IN PARALLEL (latency = max, not sum):
+  // min/max dates, sample rows, key column statistics. count() not needed —
+  // total_rows from system.tables is free.
   const minMaxPromise: Promise<{ mn?: string; mx?: string } | undefined> = dateColumn
     ? client
         .query({
@@ -467,11 +467,11 @@ async function exploreTable(
     .query({ query: `SELECT * FROM ${target.table} LIMIT 3`, format: "JSONEachRow" })
     .then(async (rs) => (await rs.json<Record<string, unknown>>()).map(compactSampleRow));
 
-  // Статистика ключевых колонок: кардинальность — дёшево (сэмпл на больших
-  // таблицах), топ-N с частотами — ТОЛЬКО для низкокардинальных колонок
-  // (event_type, action…). Высококардинальным (repo_name, actor_login: 35M/13M
-  // уникальных) полный GROUP BY стоил бы 10-13с и грозил таймаутом — им отдаём
-  // одну кардинальность, а примеры значений LLM видит в сэмпл-строках.
+  // Key column statistics: cardinality — cheap (sample on large
+  // tables), top-N with frequencies — ONLY for low-cardinality columns
+  // (event_type, action…). High-cardinality (repo_name, actor_login: 35M/13M
+  // unique) full GROUP BY would cost 10-13s and risk timeout — they get
+  // cardinality only, and the LLM sees example values in sample rows.
   const keyColumnsPromise: Promise<KeyColumnStats[]> = target.deep
     ? (async () => {
         const names = await pickKeyColumns(client, target.table, target.totalRows, columns);
@@ -508,11 +508,11 @@ async function exploreTable(
 }
 
 /**
- * Общий пул исследования: таблицы параллельно, но с ОГРАНИЧЕННОЙ
- * конкурентностью — безлимитный Promise.all даёт всплеск тяжёлых запросов на
- * один клиент, и ClickHouse Cloud под нагрузкой рвёт соединения (ECONNRESET).
- * Порядок результата повторяет порядок targets; проблема одной таблицы не
- * валит весь проход.
+ * Shared exploration pool: tables in parallel, but with LIMITED
+ * concurrency — unlimited Promise.all spikes heavy queries on
+ * one client, and ClickHouse Cloud under load drops connections (ECONNRESET).
+ * Result order matches targets order; one table failure does not
+ * kill the whole pass.
  */
 async function runExploration(
   client: ClickHouseClient,
@@ -539,7 +539,7 @@ async function runExploration(
           });
         } catch (err) {
           console.warn(
-            `exploration: пропускаю ${fqName}: ${err instanceof Error ? err.message : String(err)}`,
+            `exploration: skipping ${fqName}: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
       }
@@ -547,15 +547,15 @@ async function runExploration(
   );
   const contexts = settled.filter((c): c is SchemaContext => c !== undefined);
   if (contexts.length === 0) {
-    throw new Error("exploration: не удалось исследовать ни одну таблицу");
+    throw new Error("exploration: failed to explore any table");
   }
   return contexts;
 }
 
 /**
- * Фаза B exploration: ГЛУБОКАЯ разведка выбранных триажем таблиц (сэмплы,
- * кардинальности, топ значений, диапазон дат). Неизвестные имена молча
- * пропускаются (LLM мог ошибиться в имени), порядок triage сохраняется.
+ * Phase B exploration: DEEP reconnaissance of triage-selected tables (samples,
+ * cardinalities, top values, date range). Unknown names silently
+ * skipped (LLM may have misspelled), triage order preserved.
  */
 export async function exploreTables(
   client: ClickHouseClient,
@@ -569,40 +569,39 @@ export async function exploreTables(
     .slice(0, MAX_DEEP_TABLES);
   if (targets.length === 0) {
     throw new Error(
-      `exploreTables: ни одна из запрошенных таблиц не видна agent_ro: ${fqNames.join(", ")}`,
+      `exploreTables: none of the requested tables are visible to agent_ro: ${fqNames.join(", ")}`,
     );
   }
   return runExploration(client, targets, () => true);
 }
 
 /**
- * Legacy-проход одним вызовом (скрипт explore:schema, Trigger-таска
- * explore-schema): топ-MAX_TABLES таблиц по размеру, глубоко — только самая
- * большая. Конвейер investigate этим НЕ пользуется — он идёт через
- * catalogTables → триаж → exploreTables.
+ * Legacy single-call pass (explore:schema script, Trigger task
+ * explore-schema): top MAX_TABLES tables by size, deep — only the largest.
+ * investigate pipeline does NOT use this — it goes through
+ * catalogTables → triage → exploreTables.
  */
 export async function exploreSchema(client: ClickHouseClient): Promise<SchemaContext[]> {
   const discovered = await discoverTables(client);
   const ordered = discovered.slice(0, MAX_TABLES);
   if (ordered.length === 0) {
     throw new Error(
-      "exploreSchema: agent_ro не видит ни одной непустой таблицы данных — проверь гранты (system.tables пуст за вычетом служебных баз)",
+      "exploreSchema: agent_ro sees no non-empty data tables — check grants (system.tables empty except service databases)",
     );
   }
   return runExploration(client, ordered, (i) => i === 0);
 }
 
 // ---------------------------------------------------------------------------
-// Мемоизация в процессе
+// In-process memoization
 // ---------------------------------------------------------------------------
 
 /**
- * ЕДИНСТВЕННЫЙ «кэш» exploration — короткая мемоизация промиса КАТАЛОГА в
- * памяти процесса: параллельные раны в одном воркере не гоняют одинаковые
- * запросы к system.*. Никакого хранимого состояния, поэтому нет и церемонии
- * инвалидации: новые таблицы/гранты видны не позже, чем через
- * CATALOG_MEMO_TTL_MS даже на долгоживущем воркере. Глубокая разведка не
- * мемоизируется: она и так идёт только по 1–MAX_DEEP_TABLES выбранным таблицам.
+ * ONLY exploration "cache" — short in-process CATALOG promise memoization:
+ * parallel runs in one worker do not repeat identical system.* queries.
+ * No stored state, so no invalidation ceremony: new tables/grants visible
+ * no later than CATALOG_MEMO_TTL_MS even on a long-lived worker. Deep
+ * exploration is not memoized: it runs only on 1–MAX_DEEP_TABLES selected tables.
  */
 const CATALOG_MEMO_TTL_MS = 60_000;
 
@@ -612,7 +611,7 @@ export async function getCatalog(client: ClickHouseClient): Promise<CatalogTable
   if (!catalogMemo || Date.now() - catalogMemo.at >= CATALOG_MEMO_TTL_MS) {
     const promise = catalogTables(client);
     catalogMemo = { promise, at: Date.now() };
-    // Неудачный каталог не должен залипать в мемо до конца TTL.
+    // Failed catalog must not stick in memo until TTL ends.
     promise.catch(() => {
       if (catalogMemo?.promise === promise) catalogMemo = undefined;
     });
@@ -621,8 +620,8 @@ export async function getCatalog(client: ClickHouseClient): Promise<CatalogTable
 }
 
 /**
- * Полный живой проход B2 под agent_ro — точка входа Trigger-таски
- * (src/trigger/explore-schema.ts) и локального скрипта (scripts/explore-schema.ts).
+ * Full live B2 pass under agent_ro — entry point for Trigger task
+ * (src/trigger/explore-schema.ts) and local script (scripts/explore-schema.ts).
  */
 export async function runExploreSchema(): Promise<{ contexts: SchemaContext[] }> {
   const ro = createReadonlyClient();

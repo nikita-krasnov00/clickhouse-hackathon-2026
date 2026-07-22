@@ -1,7 +1,7 @@
 /**
- * Бейдж пользователя в шапке: аватар Google, email, «Выйти» (server action
- * NextAuth). Серверный компонент; страницы и так за гейтом proxy.ts, поэтому
- * без сессии просто ничего не рендерит.
+ * User badge in the header: Google avatar, email, "Sign out" (NextAuth server
+ * action). Server component; pages are already gated by proxy.ts, so without a
+ * session it renders nothing.
  */
 import Image from "next/image";
 import { auth, signOut } from "@/auth";

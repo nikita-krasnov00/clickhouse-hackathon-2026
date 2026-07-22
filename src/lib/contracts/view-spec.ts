@@ -1,17 +1,17 @@
 /**
- * ViewSpec — что агент отдаёт, а UI рендерит. Ядро контрактов (J1, заморожено).
+ * ViewSpec — what the agent returns and the UI renders. Core contracts (J1, frozen).
  *
- * Правила сериализации:
- *  - всё JSON-сериализуемо: даты/время — строки (ISO 8601: '2024-03-02' или
- *    '2024-03-02T14:00:00Z'; принимается любая строка, которую понимает Date.parse);
- *  - все объекты строгие (.strictObject): лишние ключи — ошибка валидации.
- *    Это осознанно: выход LLM валидируется этими схемами, и «почти правильный»
- *    JSON должен падать в цикл самопочинки, а не тихо рендериться криво.
+ * Serialization rules:
+ *  - everything is JSON-serializable: dates/times are strings (ISO 8601: '2024-03-02' or
+ *    '2024-03-02T14:00:00Z'; any string understood by Date.parse is accepted);
+ *  - all objects are strict (.strictObject): extra keys fail validation.
+ *    Intentional: LLM output is validated by these schemas, and "almost correct"
+ *    JSON must enter the self-healing loop, not silently render incorrectly.
  */
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
-// Виды карточек
+// Card kinds
 // ---------------------------------------------------------------------------
 
 export const VIEW_KINDS = [
@@ -32,53 +32,53 @@ export const VIEW_KINDS = [
 export const viewKindSchema = z.enum(VIEW_KINDS);
 export type ViewKind = z.infer<typeof viewKindSchema>;
 
-/** Строка даты/времени. ISO 8601 предпочтительно; критерий — парсится Date.parse. */
+/** Date/time string. ISO 8601 preferred; criterion is that Date.parse succeeds. */
 export const dateTimeStringSchema = z
   .string()
   .min(1)
   .refine((s) => !Number.isNaN(Date.parse(s)), {
-    message: "ожидается парсабельная строка даты/времени (ISO 8601)",
+    message: "expected a parseable date/time string (ISO 8601)",
   });
 
 // ---------------------------------------------------------------------------
-// ClickTarget — декларация кликабельности, часть ViewSpec.
+// ClickTarget — clickability declaration, part of ViewSpec.
 //
-// ClickTarget описывает, ЧТО в карточке кликабельно и КАК из клика собрать
-// ClickContext.selection. Схема:
+// ClickTarget describes WHAT in a card is clickable and HOW to build
+// ClickContext.selection from a click. Schema:
 //
 //   { on, selectionKeys, label? }
 //
-//  - `on` — класс элемента, к которому применяется цель:
-//      'point'  → точка серии в timeline, точка scatter или точка map
-//      'row'    → строка leaderboard
-//      'bucket' → корзина histogram или этап funnel
-//      'cell'   → ячейка heatmap
-//      'tile'   → плитка treemap
-//      'box'    → бокс (группа) boxplot
+//  - `on` — element class the target applies to:
+//      'point'  → series point in timeline, scatter point, or map point
+//      'row'    → leaderboard row
+//      'bucket' → histogram bucket or funnel stage
+//      'cell'   → heatmap cell
+//      'tile'   → treemap tile
+//      'box'    → boxplot box (group)
 //
-//  - `selectionKeys` — имена полей кликнутого элемента, которые UI копирует в
-//    ClickContext.selection ПОД ТЕМИ ЖЕ ИМЕНАМИ. Доступные поля фиксированы
-//    по виду элемента:
-//      point  → в timeline: 't', 'v', а также 'series' (имя серии с точкой);
-//               в scatter: 'x', 'y', 'label' (label может отсутствовать —
-//               тогда ключ опускается); в map: 'lat', 'lon', 'value', 'label'
-//      row    → любой `key` из columns карточки (значение берётся из row[key];
-//               null-значения в selection не попадают — ключ опускается)
-//      bucket → 'label', 'count' (в funnel — имя этапа и счётчик на нём)
+//  - `selectionKeys` — field names from the clicked element that the UI copies into
+//    ClickContext.selection UNDER THE SAME NAMES. Available fields are fixed
+//    per element kind:
+//      point  → in timeline: 't', 'v', and 'series' (series name with the point);
+//               in scatter: 'x', 'y', 'label' (label may be absent —
+//               then the key is omitted); in map: 'lat', 'lon', 'value', 'label'
+//      row    → any `key` from the card's columns (value taken from row[key];
+//               null values are omitted from selection — key is skipped)
+//      bucket → 'label', 'count' (in funnel — stage name and count on it)
 //      cell   → 'x', 'y', 'value'
-//      tile   → 'label', 'value', 'group' (group может отсутствовать)
-//      box    → 'label', 'med' (медиана группы)
+//      tile   → 'label', 'value', 'group' (group may be absent)
+//      box    → 'label', 'med' (group median)
 //
-//  - `label` — подпись действия для тултипа/меню («Разобраться с этой точкой»).
+//  - `label` — action label for tooltip/menu ("Investigate this point").
 //
-// v2: быстрого пути drillId больше нет — любой клик уходит новым раном агента
-// (action: 'why') с ClickContext в качестве контекста. Датасет-специфичный
-// каталог дриллов удалён вместе с /api/drill.
+// v2: no fast-path drillId — any click triggers a new agent run
+// (action: 'why') with ClickContext as context. Dataset-specific
+// drill catalog removed together with /api/drill.
 //
-// Почему у graph и verdict нет clicks: так зафиксирован эскиз PLAN.md.
-// Это не блокирует интерактивность графа: ClickContext не ссылается на
-// ClickTarget, поэтому NetworkGraph может захардкодить клик по узлу как
-// action:'why' с selection { node: id } — контракт это уже позволяет.
+// Why graph and verdict have no clicks: fixed in the PLAN.md sketch.
+// This does not block graph interactivity: ClickContext does not reference
+// ClickTarget, so NetworkGraph can hardcode a node click as
+// action:'why' with selection { node: id } — the contract already allows this.
 // ---------------------------------------------------------------------------
 
 export const CLICK_TARGET_ELEMENTS = [
@@ -98,7 +98,7 @@ export const clickTargetSchema = z.strictObject({
 export type ClickTarget = z.infer<typeof clickTargetSchema>;
 
 // ---------------------------------------------------------------------------
-// Примитивы данных карточек
+// Card data primitives
 // ---------------------------------------------------------------------------
 
 export const seriesPointSchema = z.strictObject({
@@ -114,16 +114,16 @@ export const seriesSchema = z.strictObject({
 export type Series = z.infer<typeof seriesSchema>;
 
 export const columnSchema = z.strictObject({
-  /** Ключ значения в Row и в selectionKeys клик-целей. */
+  /** Value key in Row and in click-target selectionKeys. */
   key: z.string(),
-  /** Заголовок колонки для рендера. */
+  /** Column header for rendering. */
   label: z.string(),
 });
 export type Column = z.infer<typeof columnSchema>;
 
 /**
- * Строка leaderboard: значения по ключам колонок. null допустим (SQL любит
- * null) — рендерится как «—», в ClickContext.selection не копируется.
+ * Leaderboard row: values keyed by column keys. null is allowed (SQL loves
+ * null) — renders as "—", not copied into ClickContext.selection.
  */
 export const rowSchema = z.record(
   z.string(),
@@ -140,9 +140,9 @@ export type Bucket = z.infer<typeof bucketSchema>;
 export const graphNodeSchema = z.strictObject({
   id: z.string(),
   label: z.string(),
-  /** Скор подозрительности 0..1 — по нему агент режет top-N под maxNodes. */
+  /** Suspicion score 0..1 — agent uses it to cut top-N under maxNodes. */
   score: z.number().optional(),
-  /** Относительный размер узла для рендера. */
+  /** Relative node size for rendering. */
   size: z.number().optional(),
 });
 export type GraphNode = z.infer<typeof graphNodeSchema>;
@@ -154,7 +154,7 @@ export const graphEdgeSchema = z.strictObject({
 });
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 
-/** Ячейка heatmap; x/y — значения из xLabels/yLabels. Разреженная матрица допустима. */
+/** Heatmap cell; x/y are values from xLabels/yLabels. Sparse matrix is allowed. */
 export const heatmapCellSchema = z.strictObject({
   x: z.string(),
   y: z.string(),
@@ -162,11 +162,11 @@ export const heatmapCellSchema = z.strictObject({
 });
 export type HeatmapCell = z.infer<typeof heatmapCellSchema>;
 
-/** Точка scatter: числовые координаты + опциональное имя сущности. */
+/** Scatter point: numeric coordinates + optional entity name. */
 export const scatterPointSchema = z.strictObject({
   x: z.number(),
   y: z.number(),
-  /** Имя сущности за точкой (аккаунт, репо) — уходит в тултип и selection. */
+  /** Entity name behind the point (account, repo) — goes to tooltip and selection. */
   label: z.string().optional(),
 });
 export type ScatterPoint = z.infer<typeof scatterPointSchema>;
@@ -179,59 +179,59 @@ export const statSchema = z.strictObject({
 export type Stat = z.infer<typeof statSchema>;
 
 /**
- * Точка карты: географические координаты (WGS84, градусы) + опциональные
- * величина (размер/интенсивность маркера) и имя сущности.
+ * Map point: geographic coordinates (WGS84, degrees) + optional
+ * magnitude (marker size/intensity) and entity name.
  */
 export const mapPointSchema = z.strictObject({
   lat: z.number().min(-90).max(90),
   lon: z.number().min(-180).max(180),
-  /** Величина точки (агрегат: count, сумма…) — кодируется размером/яркостью. */
+  /** Point magnitude (aggregate: count, sum…) — encoded as size/brightness. */
   value: z.number().optional(),
-  /** Имя сущности за точкой (район, город) — тултип и selection. */
+  /** Entity name behind the point (district, city) — tooltip and selection. */
   label: z.string().optional(),
 });
 export type MapPoint = z.infer<typeof mapPointSchema>;
 
-/** Плитка treemap: часть целого. Площадь ∝ value, поэтому value строго > 0. */
+/** Treemap tile: part of a whole. Area ∝ value, so value must be strictly > 0. */
 export const treemapItemSchema = z.strictObject({
   label: z.string(),
   value: z.number().positive(),
-  /** Группа верхнего уровня — категориальный цвет плитки и легенда. */
+  /** Top-level group — categorical tile color and legend. */
   group: z.string().optional(),
 });
 export type TreemapItem = z.infer<typeof treemapItemSchema>;
 
 /**
- * Группа boxplot: пять квантилей распределения метрики внутри группы.
- * Конвенция усов — p05/p95 (SQL-контракт generate-sql.ts), но контракт
- * требует только монотонность: lo ≤ q1 ≤ med ≤ q3 ≤ hi.
+ * Boxplot group: five distribution quantiles of a metric within a group.
+ * Whisker convention is p05/p95 (SQL contract in generate-sql.ts), but the contract
+ * only requires monotonicity: lo ≤ q1 ≤ med ≤ q3 ≤ hi.
  */
 export const boxplotGroupSchema = z
   .strictObject({
     label: z.string(),
-    /** Нижний ус (обычно p05). */
+    /** Lower whisker (usually p05). */
     lo: z.number(),
     q1: z.number(),
     med: z.number(),
     q3: z.number(),
-    /** Верхний ус (обычно p95). */
+    /** Upper whisker (usually p95). */
     hi: z.number(),
   })
   .refine((g) => g.lo <= g.q1 && g.q1 <= g.med && g.med <= g.q3 && g.q3 <= g.hi, {
-    message: "квантили обязаны быть монотонны: lo ≤ q1 ≤ med ≤ q3 ≤ hi",
+    message: "quantiles must be monotonic: lo ≤ q1 ≤ med ≤ q3 ≤ hi",
   });
 export type BoxplotGroup = z.infer<typeof boxplotGroupSchema>;
 
 // ---------------------------------------------------------------------------
-// Варианты ViewSpec
+// ViewSpec variants
 // ---------------------------------------------------------------------------
 
 /**
- * Аннотация карточки — пишется ОТДЕЛЬНЫМ быстрым LLM-вызовом ПОСЛЕ исполнения
- * SQL, по фактическим строкам результата (annotateCard, generate-sql.ts):
- *   - insight: вывод аналитика — 1–2 предложения с ключевыми цифрами;
- *   - metricNote: что именно посчитано (агрегация, фильтры, период, единицы).
- * Поля опциональны у всех видов-чартов: сбой аннотатора не роняет карточку.
+ * Card annotation — written by a SEPARATE fast LLM call AFTER SQL execution,
+ * from actual result rows (annotateCard, generate-sql.ts):
+ *   - insight: analyst takeaway — 1–2 sentences with key numbers;
+ *   - metricNote: what was computed (aggregation, filters, period, units).
+ * Fields are optional on all chart kinds: annotator failure must not break the card.
  */
 const cardAnnotationFields = {
   insight: z.string().optional(),
@@ -242,7 +242,7 @@ export const timelineSpecSchema = z.strictObject({
   kind: z.literal("timeline"),
   title: z.string(),
   series: z.array(seriesSchema),
-  /** [от, до] — закрашиваемое окно аномалии. */
+  /** [from, to] — shaded anomaly window. */
   anomalyWindow: z.tuple([dateTimeStringSchema, dateTimeStringSchema]).optional(),
   clicks: z.array(clickTargetSchema),
   ...cardAnnotationFields,
@@ -262,7 +262,7 @@ export type LeaderboardSpec = z.infer<typeof leaderboardSpecSchema>;
 export const histogramSpecSchema = z.strictObject({
   kind: z.literal("histogram"),
   title: z.string(),
-  /** Подпись оси корзин («Возраст аккаунта»). */
+  /** Bucket axis label ("Account age"). */
   bucketLabel: z.string(),
   buckets: z.array(bucketSchema),
   clicks: z.array(clickTargetSchema),
@@ -275,7 +275,7 @@ export const graphSpecSchema = z.strictObject({
   title: z.string(),
   nodes: z.array(graphNodeSchema),
   edges: z.array(graphEdgeSchema),
-  /** Жёсткий cap узлов — защита рендера, см. риски в PLAN.md. */
+  /** Hard node cap — render protection, see risks in PLAN.md. */
   maxNodes: z.number().int().positive(),
   ...cardAnnotationFields,
 });
@@ -294,7 +294,7 @@ export type HeatmapSpec = z.infer<typeof heatmapSpecSchema>;
 
 export const verdictSpecSchema = z.strictObject({
   kind: z.literal("verdict"),
-  /** Сам вердикт — одно-два предложения, вывод расследования. */
+  /** The verdict itself — one or two sentences, investigation conclusion. */
   verdict: z.string(),
   confidence: z.enum(["low", "medium", "high"]),
   evidence: z.array(statSchema),
@@ -304,22 +304,22 @@ export type VerdictSpec = z.infer<typeof verdictSpecSchema>;
 export const bigNumberSpecSchema = z.strictObject({
   kind: z.literal("bignumber"),
   title: z.string(),
-  /** Само значение KPI — число или готовая строка («84%», «×70»). */
+  /** The KPI value itself — number or pre-formatted string ("84%", "×70"). */
   value: z.union([z.string(), z.number()]),
-  /** Подпись метрики под значением. */
+  /** Metric label below the value. */
   label: z.string(),
-  /** Изменение в % к базе: > 0 — рост (зелёный), < 0 — падение (красный). */
+  /** Percent change vs baseline: > 0 — growth (green), < 0 — decline (red). */
   delta: z.number().optional(),
-  /** Вторичная подпись-контекст («против медианы 87 в неделю»). */
+  /** Secondary context caption ("vs median 87 per week"). */
   detail: z.string().optional(),
   ...cardAnnotationFields,
 });
 export type BigNumberSpec = z.infer<typeof bigNumberSpecSchema>;
 
 /**
- * Шкала оси scatter. 'log' — для величин, разбросанных на порядки (звёзды,
- * коммиты): точки берутся СЫРЫМИ, логарифмирование и подписи делает рендер
- * (тики — реальные значения 50/500/5k, не log-числа). Дефолт — 'linear'.
+ * Scatter axis scale. 'log' — for magnitudes spanning orders of magnitude (stars,
+ * commits): points are RAW, rendering applies log scaling and tick labels
+ * (ticks show real values 50/500/5k, not log numbers). Default — 'linear'.
  */
 export const axisScaleSchema = z.enum(["linear", "log"]);
 export type AxisScale = z.infer<typeof axisScaleSchema>;
@@ -338,17 +338,17 @@ export const scatterSpecSchema = z.strictObject({
 export type ScatterSpec = z.infer<typeof scatterSpecSchema>;
 
 /**
- * Карта: гео-точки {lat, lon} с опциональной величиной. Рендер — SVG с
- * тайловой подложкой CARTO (Web Mercator): автофит по bounding box точек,
- * интерактивные зум/панорама, кластеризация близких точек; оффлайн-фоллбек —
- * градусная сетка. Плотные сырые координаты SQL обязан агрегировать
- * (round + count), не сливать миллионы строк.
+ * Map: geo points {lat, lon} with optional magnitude. Rendered as SVG with
+ * CARTO tile basemap (Web Mercator): auto-fit to point bounding box,
+ * interactive zoom/pan, clustering of nearby points; offline fallback —
+ * degree grid. Dense raw SQL coordinates must be aggregated
+ * (round + count), not millions of raw rows.
  */
 export const mapSpecSchema = z.strictObject({
   kind: z.literal("map"),
   title: z.string(),
   points: z.array(mapPointSchema),
-  /** Подпись величины value для легенды («посадки», «выручка»). */
+  /** Label for the value magnitude in the legend ("landings", "revenue"). */
   valueLabel: z.string().optional(),
   clicks: z.array(clickTargetSchema),
   ...cardAnnotationFields,
@@ -356,15 +356,15 @@ export const mapSpecSchema = z.strictObject({
 export type MapSpec = z.infer<typeof mapSpecSchema>;
 
 /**
- * Treemap: части целого. Площадь плитки ∝ value; опциональные группы дают
- * категориальный цвет и легенду. Долю от суммы показанных плиток считает
- * рендер. Много мелких категорий SQL обязан сворачивать в «прочее» сам.
+ * Treemap: parts of a whole. Tile area ∝ value; optional groups provide
+ * categorical color and legend. Share of total among shown tiles is computed
+ * by the renderer. Many small categories must be folded into "other" in SQL.
  */
 export const treemapSpecSchema = z.strictObject({
   kind: z.literal("treemap"),
   title: z.string(),
   items: z.array(treemapItemSchema).min(1),
-  /** Подпись величины value для тултипа/легенды («выручка», «вопросы»). */
+  /** Label for the value magnitude in tooltip/legend ("revenue", "questions"). */
   valueLabel: z.string().optional(),
   clicks: z.array(clickTargetSchema),
   ...cardAnnotationFields,
@@ -372,9 +372,9 @@ export const treemapSpecSchema = z.strictObject({
 export type TreemapSpec = z.infer<typeof treemapSpecSchema>;
 
 /**
- * Funnel: этапы процесса в порядке прохождения (широкий → узкий). Ширина
- * полосы ∝ count; проценты переходов между этапами считает рендер.
- * Этап — тот же Bucket {label, count}, клики — on:'bucket'.
+ * Funnel: process stages in traversal order (wide → narrow). Bar width
+ * ∝ count; stage-to-stage percentages are computed by the renderer.
+ * Stage is the same Bucket {label, count}, clicks — on:'bucket'.
  */
 export const funnelSpecSchema = z.strictObject({
   kind: z.literal("funnel"),
@@ -385,11 +385,11 @@ export const funnelSpecSchema = z.strictObject({
 });
 export type FunnelSpec = z.infer<typeof funnelSpecSchema>;
 
-/** Boxplot: сравнение распределений метрики по группам (5 квантилей на бокс). */
+/** Boxplot: compare metric distributions across groups (5 quantiles per box). */
 export const boxplotSpecSchema = z.strictObject({
   kind: z.literal("boxplot"),
   title: z.string(),
-  /** Подпись метрики на числовой оси («сумма чека», «часы до ответа»). */
+  /** Metric label on the numeric axis ("order total", "hours to reply"). */
   valueLabel: z.string().optional(),
   groups: z.array(boxplotGroupSchema).min(1),
   clicks: z.array(clickTargetSchema),
@@ -398,12 +398,12 @@ export const boxplotSpecSchema = z.strictObject({
 export type BoxplotSpec = z.infer<typeof boxplotSpecSchema>;
 
 // ---------------------------------------------------------------------------
-// Дискриминированное объединение
+// Discriminated union
 // ---------------------------------------------------------------------------
 
 /**
- * Схема каждого вида по ключу — для точечной валидации и рендер-реестра.
- * `satisfies Record<ViewKind, …>` гарантирует: все виды на месте, без пропусков.
+ * Schema per kind keyed by kind — for targeted validation and render registry.
+ * `satisfies Record<ViewKind, …>` guarantees: all kinds present, none missing.
  */
 export const viewSpecSchemaByKind = {
   timeline: timelineSpecSchema,
