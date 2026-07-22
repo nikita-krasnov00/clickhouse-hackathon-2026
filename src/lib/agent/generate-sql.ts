@@ -44,6 +44,7 @@ import {
 import type { SchemaContext } from "./explore";
 import type { TriageCard } from "./triage";
 import { askAndParse, extractJsonObject } from "./llm-json";
+import { languageDirective } from "./language";
 
 /** Назначение карточки от триажа — без cardId (он остаётся у конвейера). */
 export type CardAssignment = Pick<TriageCard, "kind" | "title" | "hint">;
@@ -195,7 +196,7 @@ Reply with ONLY ONE strict JSON object — no markdown fences, no explanations, 
 - "anomalyWindow": optional, timeline only — include it only when the question points at a window you can already name.
 - "bucketLabel": histogram only. "xLabel"/"yLabel"/"xScale"/"yScale": scatter only. "valueLabel": map, treemap and boxplot.`;
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(question: string): string {
   return [
     "You are a senior ClickHouse data engineer on «Insight Desk» — a live-dashboard agent that answers analytical questions over WHATEVER data exists in the connected ClickHouse instance.",
     "You are given ONE dashboard card to fill: its kind, working title and a hint from the triage planner. Write ONE ClickHouse SELECT whose result rows fill exactly that card. The pipeline builds the card JSON from your rows — you return only sql + kind + title (+ per-kind extras).",
@@ -203,6 +204,7 @@ function buildSystemPrompt(): string {
     "## View card catalog (what each kind looks like)",
     formatViewSpecCatalogForPrompt(),
     OUTPUT_FORMAT,
+    languageDirective(question),
   ].join("\n\n");
 }
 
@@ -236,7 +238,7 @@ export async function generateCardSql(
 ): Promise<GeneratedSql> {
   return askAndParse(
     [
-      { role: "system", content: buildSystemPrompt() },
+      { role: "system", content: buildSystemPrompt(input.question) },
       { role: "user", content: buildUserPrompt(input) },
     ],
     parseSingleSqlAnswer,
@@ -270,7 +272,7 @@ export async function healSql(input: HealSqlInput): Promise<GeneratedSql> {
 
   return askAndParse(
     [
-      { role: "system", content: buildSystemPrompt() },
+      { role: "system", content: buildSystemPrompt(input.question) },
       { role: "user", content: buildUserPrompt(input) },
       { role: "user", content: healMessage },
     ],
@@ -310,8 +312,9 @@ export async function annotateCard(input: {
         content:
           "You are annotating ONE dashboard card of «Insight Desk» AFTER its SQL has already run against ClickHouse. You get the user's question, the card (kind + title), the SQL and a sample of the ACTUAL result rows.\n" +
           'Reply with ONLY strict JSON: {"insight": "…", "metricNote": "…"}.\n' +
-          "- insight: 1–2 sentences — the takeaway a sharp analyst would say out loud, grounded ONLY in the provided rows. Quote 1–2 key numbers; name the leader / spike / shape of the distribution. If the rows are too flat or the sample too small to conclude anything, say exactly that, plainly. Write in the language of the question.\n" +
-          "- metricNote: ONE sentence for a non-analyst explaining what the metric IS: what was counted/summed/averaged, over which filters and time window, in what units — read it from the SQL. Same language. No speculation, no marketing.",
+          "- insight: 1–2 sentences — the takeaway a sharp analyst would say out loud, grounded ONLY in the provided rows. Quote 1–2 key numbers; name the leader / spike / shape of the distribution. If the rows are too flat or the sample too small to conclude anything, say exactly that, plainly.\n" +
+          "- metricNote: ONE sentence for a non-analyst explaining what the metric IS: what was counted/summed/averaged, over which filters and time window, in what units — read it from the SQL. No speculation, no marketing.\n\n" +
+          languageDirective(input.question),
       },
       {
         role: "user",
@@ -360,8 +363,9 @@ export async function summarizeVerdict(input: {
         content:
           "You are finishing a data investigation on «Insight Desk». Given the user's question and aggregate evidence computed from the live data, deliver the verdict.\n" +
           'Reply with ONLY strict JSON: {"verdict": "…", "confidence": "low|medium|high"}.\n' +
-          "- verdict: 1–2 sentences grounded in the numbers (quote the key ones). Write it in the language the question is written in — English question → English verdict, Russian question → Russian verdict. Never use any other language.\n" +
-          "- confidence: how strongly the evidence supports the verdict. If the evidence is empty or degenerate (all zeros), say plainly that the data is insufficient and set confidence to 'low'.",
+          "- verdict: 1–2 sentences grounded in the numbers (quote the key ones).\n" +
+          "- confidence: how strongly the evidence supports the verdict. If the evidence is empty or degenerate (all zeros), say plainly that the data is insufficient and set confidence to 'low'.\n\n" +
+          languageDirective(input.question),
       },
       {
         role: "user",
