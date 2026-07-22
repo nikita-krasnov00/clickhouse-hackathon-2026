@@ -338,10 +338,11 @@ export const scatterSpecSchema = z.strictObject({
 export type ScatterSpec = z.infer<typeof scatterSpecSchema>;
 
 /**
- * Карта: гео-точки {lat, lon} с опциональной величиной. Рендер — самописный
- * SVG без тайлов и внешних зависимостей: equirect-проекция, вьюпорт по
- * bounding box точек, градусная сетка. Плотные сырые координаты SQL обязан
- * агрегировать (round + count), не сливать миллионы строк.
+ * Карта: гео-точки {lat, lon} с опциональной величиной. Рендер — SVG с
+ * тайловой подложкой CARTO (Web Mercator): автофит по bounding box точек,
+ * интерактивные зум/панорама, кластеризация близких точек; оффлайн-фоллбек —
+ * градусная сетка. Плотные сырые координаты SQL обязан агрегировать
+ * (round + count), не сливать миллионы строк.
  */
 export const mapSpecSchema = z.strictObject({
   kind: z.literal("map"),

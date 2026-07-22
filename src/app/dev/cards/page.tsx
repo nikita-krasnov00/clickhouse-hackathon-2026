@@ -12,14 +12,21 @@
  * появляются из Realtime-событий): SSR чартов ловит гидрационный мисматч на
  * float-математике (Math.log10 в Node и браузере расходится в последнем ULP).
  */
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { VIEW_SPEC_CATALOG } from "@/lib/contracts";
 import { ViewSpecCard } from "@/components/viewspec/ViewSpecCard";
 
+const noopSubscribe = () => () => {};
+
 export default function DevCardsPage() {
   const [lastClick, setLastClick] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // false на сервере и в гидрационном рендере, true после — mounted-гейт
+  // без setState-в-эффекте.
+  const mounted = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
   const entries = Object.values(VIEW_SPEC_CATALOG);
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">

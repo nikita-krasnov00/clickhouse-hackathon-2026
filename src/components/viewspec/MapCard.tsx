@@ -14,17 +14,32 @@
  * маркера (sqrt-шкала) + непрозрачность; кольцо поверхности отделяет маркеры
  * от пёстрой подложки. Hover-тултип, хит-таргет ≥ 12px, клавиатура; клик по
  * точке → ClickContext (on:'point').
+ *
+ * ЗУМ И ПАНОРАМА (конвенции TimelineCard): pinch/Ctrl+колесо — непрерывный
+ * зум вокруг курсора, перетаскивание — панорама (порог 4px отделяет клик по
+ * маркеру), кнопки +/−/⟲ — то же с клавиатуры и на тачах, двойной клик —
+ * сброс к автофиту. Обычный скролл отдаётся странице. Вид {z, cx, cy} живёт
+ * поверх автофита; кластеризация пересчитывается на каждый вид, поэтому при
+ * приближении кластеры распадаются на отдельные точки. Тайлы берутся с
+ * ближайшего целого зума и масштабируются (2^(z − zInt)).
  */
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ClickContext, MapPoint, MapSpec } from "@/lib/contracts";
 import { buildClickContext, findClickTarget, mapPointElementFields } from "./click";
 
 const VB_W = 640;
 const VB_H = 300;
 const M = { top: 10, right: 10, bottom: 22, left: 40 };
+const INNER_W = VB_W - M.left - M.right;
+const INNER_H = VB_H - M.top - M.bottom;
+const PANEL_CX = M.left + INNER_W / 2;
+const PANEL_CY = M.top + INNER_H / 2;
 /** Экранный размер тайла в единицах viewBox (256 @2x — чётко на ретине). */
 const TILE = 256;
 const MAX_ZOOM = 18;
+const MIN_ZOOM = 1;
+/** Порог панорамы в единицах viewBox: до него жест остаётся кликом по маркеру. */
+const PAN_THRESHOLD = 4;
 /**
  * Радиус кластеризации в единицах viewBox: точки ближе этого сливаются в один
  * маркер со счётчиком. Радиус мал — сливаются только реально перекрывающиеся
@@ -66,6 +81,16 @@ function mercY(lat: number): number {
   const phi = (Math.max(-85.05, Math.min(85.05, lat)) * Math.PI) / 180;
   return (1 - Math.log(Math.tan(phi) + 1 / Math.cos(phi)) / Math.PI) / 2;
 }
+/** Обратный Web Mercator — для градусных тиков видимой области. */
+function invMercLon(x: number): number {
+  return x * 360 - 180;
+}
+function invMercLat(y: number): number {
+  return (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
+}
+
+/** Вид карты: непрерывный зум + центр в мировых координатах Меркатора [0..1]. */
+type MapView = { z: number; cx: number; cy: number };
 
 type Tile = { key: string; url: string; px: number; py: number };
 
@@ -73,14 +98,23 @@ type Projection = {
   x: (lon: number) => number;
   y: (lat: number) => number;
   tiles: Tile[];
+  /** Экранный размер тайла: TILE × 2^(z − zInt) при дробном зуме. */
+  tileSize: number;
   latTicks: number[];
   lonTicks: number[];
   latStep: number;
   lonStep: number;
+  /** Автофит-вид (цель сброса) и эффективный текущий вид (после клампов). */
+  fit: MapView;
+  view: MapView;
 };
 
-/** Проекция Web Mercator, вписанная в панель, + список тайлов подложки. */
-function buildProjection(points: MapPoint[]): Projection {
+/**
+ * Проекция Web Mercator: автофит bbox точек в панель ЛИБО явный вид
+ * {z, cx, cy} от зума/панорамы (центр клампится краями мира), + тайлы
+ * подложки и градусные тики по видимой области.
+ */
+function buildProjection(points: MapPoint[], overrideView: MapView | null): Projection {
   let minLat = Math.min(...points.map((p) => p.lat));
   let maxLat = Math.max(...points.map((p) => p.lat));
   let minLon = Math.min(...points.map((p) => p.lon));
@@ -103,33 +137,47 @@ function buildProjection(points: MapPoint[]): Projection {
   minLon -= padLon;
   maxLon += padLon;
 
-  const innerW = VB_W - M.left - M.right;
-  const innerH = VB_H - M.top - M.bottom;
-
-  // Зум: bounding box (в мировых координатах Меркатора) должен влезть в панель.
+  // Автофит: bounding box (в мировых координатах Меркатора) влезает в панель.
   const dmx = Math.max(mercX(maxLon) - mercX(minLon), 1e-9);
   const dmy = Math.max(mercY(minLat) - mercY(maxLat), 1e-9); // y растёт вниз
   const zFit = Math.floor(
-    Math.log2(Math.min(innerW / (TILE * dmx), innerH / (TILE * dmy))),
+    Math.log2(Math.min(INNER_W / (TILE * dmx), INNER_H / (TILE * dmy))),
   );
-  const z = Math.max(1, Math.min(MAX_ZOOM, zFit));
+  const fit: MapView = {
+    z: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zFit)),
+    cx: (mercX(minLon) + mercX(maxLon)) / 2,
+    cy: (mercY(maxLat) + mercY(minLat)) / 2,
+  };
+
+  // Эффективный вид: явный или автофит; центр кламплен так, чтобы панель не
+  // выезжала за край мира (а мир меньше панели — центрируется).
+  const z = overrideView
+    ? Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, overrideView.z))
+    : fit.z;
   const world = TILE * 2 ** z; // размер мира в px на этом зуме
+  const clampCenter = (c: number, inner: number) => {
+    const half = inner / 2 / world;
+    return half >= 0.5 ? 0.5 : Math.min(1 - half, Math.max(half, c));
+  };
+  const view: MapView = {
+    z,
+    cx: clampCenter(overrideView ? overrideView.cx : fit.cx, INNER_W),
+    cy: clampCenter(overrideView ? overrideView.cy : fit.cy, INNER_H),
+  };
 
-  // Центровка bbox в панели.
-  const cx = (mercX(minLon) + mercX(maxLon)) / 2;
-  const cy = (mercY(maxLat) + mercY(minLat)) / 2;
-  const panelCx = M.left + innerW / 2;
-  const panelCy = M.top + innerH / 2;
+  const x = (lon: number) => PANEL_CX + (mercX(lon) - view.cx) * world;
+  const y = (lat: number) => PANEL_CY + (mercY(lat) - view.cy) * world;
 
-  const x = (lon: number) => panelCx + (mercX(lon) - cx) * world;
-  const y = (lat: number) => panelCy + (mercY(lat) - cy) * world;
+  // Тайлы ближайшего целого зума; при дробном z масштабируются рендером.
+  const zInt = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(z)));
+  const n = 2 ** zInt;
+  const tileSize = world / n;
 
-  // Тайлы, покрывающие панель: от левого-верхнего угла панели в мир и обратно.
-  const worldLeft = cx + (M.left - panelCx) / world;
-  const worldTop = cy + (M.top - panelCy) / world;
-  const worldRight = cx + (VB_W - M.right - panelCx) / world;
-  const worldBottom = cy + (VB_H - M.bottom - panelCy) / world;
-  const n = 2 ** z;
+  // Видимые границы панели в мировых координатах — тайлы и тики по ним.
+  const worldLeft = view.cx - INNER_W / 2 / world;
+  const worldRight = view.cx + INNER_W / 2 / world;
+  const worldTop = view.cy - INNER_H / 2 / world;
+  const worldBottom = view.cy + INNER_H / 2 / world;
   const txMin = Math.max(0, Math.floor(worldLeft * n));
   const txMax = Math.min(n - 1, Math.floor(worldRight * n));
   const tyMin = Math.max(0, Math.floor(worldTop * n));
@@ -138,26 +186,39 @@ function buildProjection(points: MapPoint[]): Projection {
   for (let ty = tyMin; ty <= tyMax; ty++) {
     for (let tx = txMin; tx <= txMax; tx++) {
       tiles.push({
-        key: `${z}/${tx}/${ty}`,
-        url: tileUrl(z, tx, ty),
-        px: panelCx + (tx / n - cx) * world,
-        py: panelCy + (ty / n - cy) * world,
+        key: `${zInt}/${tx}/${ty}`,
+        url: tileUrl(zInt, tx, ty),
+        px: PANEL_CX + (tx / n - view.cx) * world,
+        py: PANEL_CY + (ty / n - view.cy) * world,
       });
     }
   }
 
-  // Градусные тики (подписи всегда; линии — только в оффлайн-фоллбеке).
-  const latStep = niceDegreeStep(maxLat - minLat);
-  const lonStep = niceDegreeStep(maxLon - minLon);
+  // Градусные тики по ВИДИМОЙ области — живут при зуме и панораме
+  // (подписи всегда; линии — только в оффлайн-фоллбеке).
+  const visMinLat = invMercLat(worldBottom);
+  const visMaxLat = invMercLat(worldTop);
+  const visMinLon = invMercLon(worldLeft);
+  const visMaxLon = invMercLon(worldRight);
+  const latStep = niceDegreeStep(visMaxLat - visMinLat);
+  const lonStep = niceDegreeStep(visMaxLon - visMinLon);
   const latTicks: number[] = [];
-  for (let v = Math.ceil(minLat / latStep) * latStep; v <= maxLat; v += latStep) {
+  for (
+    let v = Math.ceil(visMinLat / latStep) * latStep;
+    v <= visMaxLat;
+    v += latStep
+  ) {
     latTicks.push(+v.toFixed(6));
   }
   const lonTicks: number[] = [];
-  for (let v = Math.ceil(minLon / lonStep) * lonStep; v <= maxLon; v += lonStep) {
+  for (
+    let v = Math.ceil(visMinLon / lonStep) * lonStep;
+    v <= visMaxLon;
+    v += lonStep
+  ) {
     lonTicks.push(+v.toFixed(6));
   }
-  return { x, y, tiles, latTicks, lonTicks, latStep, lonStep };
+  return { x, y, tiles, tileSize, latTicks, lonTicks, latStep, lonStep, fit, view };
 }
 
 /** Размер/яркость по value: sqrt-шкала площади + непрозрачность (одна тональность). */
@@ -266,15 +327,37 @@ export function MapCard({
   const [hover, setHover] = useState<Hover>(null);
   /** Сколько тайлов подложки реально загрузилось: 0 → оффлайн-фоллбек с сеткой. */
   const [tilesLoaded, setTilesLoaded] = useState(0);
+  /** Явный вид (зум/панорама); null — автофит по данным. */
+  const [view, setView] = useState<MapView | null>(null);
+  const [panning, setPanning] = useState(false);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    x0: number;
+    y0: number;
+    view0: MapView;
+    panning: boolean;
+  } | null>(null);
   const clipId = useId();
   const pointTarget = findClickTarget(spec.clicks, "point");
   const clickable = Boolean(pointTarget && onClickContext);
 
+  // Новые данные — новый автофит: явный вид сбрасывается. Корректировка
+  // состояния прямо в рендере (официальный паттерн React для «сброса по
+  // смене пропа») — без эффекта и лишнего кадра со старым видом.
+  const [prevPoints, setPrevPoints] = useState(spec.points);
+  if (prevPoints !== spec.points) {
+    setPrevPoints(spec.points);
+    setView(null);
+  }
+
   const layout = useMemo(() => {
     if (spec.points.length === 0) return null;
-    const proj = buildProjection(spec.points);
+    const proj = buildProjection(spec.points, view);
     // Близкие точки объединяем в кластеры; шкала размера — уже по величине
-    // КЛАСТЕРА (сумма может превышать максимум одиночной точки).
+    // КЛАСТЕРА (сумма может превышать максимум одиночной точки). Кластеры
+    // живут в экранных координатах, поэтому при зуме пересчитываются —
+    // приближение раскрывает кластер на отдельные точки.
     const clusters = clusterPoints(spec.points, proj);
     const scale = buildValueScale(clusters);
     // Крупные снизу, мелкие сверху — маленькие маркеры не тонут под большими.
@@ -282,7 +365,104 @@ export function MapCard({
       .map((c, i) => ({ c, i }))
       .sort((a, b) => (b.c.value ?? 0) - (a.c.value ?? 0));
     return { proj, scale, clusters, order, clustered: clusters.length < spec.points.length };
-  }, [spec.points]);
+  }, [spec.points, view]);
+
+  /** Координаты события мыши → координаты viewBox. */
+  const vbPos = (clientX: number, clientY: number) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return { x: PANEL_CX, y: PANEL_CY };
+    return {
+      x: ((clientX - rect.left) / rect.width) * VB_W,
+      y: ((clientY - rect.top) / rect.height) * VB_H,
+    };
+  };
+
+  /** Зум на dz уровней; anchor (viewBox) — гео-точка под ним остаётся на месте. */
+  const zoomBy = (dz: number, anchor?: { x: number; y: number }) => {
+    if (!layout) return;
+    const cur = layout.proj.view;
+    const z2 = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cur.z + dz));
+    if (z2 === cur.z) return;
+    const w1 = TILE * 2 ** cur.z;
+    const w2 = TILE * 2 ** z2;
+    if (anchor) {
+      const wx = cur.cx + (anchor.x - PANEL_CX) / w1;
+      const wy = cur.cy + (anchor.y - PANEL_CY) / w1;
+      setView({
+        z: z2,
+        cx: wx - (anchor.x - PANEL_CX) / w2,
+        cy: wy - (anchor.y - PANEL_CY) / w2,
+      });
+    } else {
+      setView({ z: z2, cx: cur.cx, cy: cur.cy });
+    }
+  };
+
+  // Колесо: pinch/Ctrl — зум вокруг курсора; обычный скролл отдаём странице.
+  // Нативный listener с passive:false — React вешает wheel пассивно,
+  // preventDefault не сработал бы (паттерн TimelineCard).
+  const wheelRef = useRef<(e: WheelEvent) => void>(() => {});
+  const handleWheel = (e: WheelEvent) => {
+    if (!layout || !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    zoomBy(-e.deltaY / 240, vbPos(e.clientX, e.clientY));
+  };
+  useEffect(() => {
+    wheelRef.current = handleWheel;
+  });
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => wheelRef.current(e);
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
+
+  // Панорама: до порога — обычный клик по маркеру; после — захват указателя
+  // (клики маркеров при этом не стреляют — их перехватывает svg).
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0 || !layout) return;
+    const p = vbPos(e.clientX, e.clientY);
+    dragRef.current = {
+      pointerId: e.pointerId,
+      x0: p.x,
+      y0: p.y,
+      view0: layout.proj.view,
+      panning: false,
+    };
+  };
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const p = vbPos(e.clientX, e.clientY);
+    if (!drag.panning && Math.hypot(p.x - drag.x0, p.y - drag.y0) > PAN_THRESHOLD) {
+      drag.panning = true;
+      try {
+        // Захват глушит клики маркеров до конца панорамы; на синтетических
+        // указателях (тесты, автоматизация) капчер может кинуть — панорама
+        // обязана работать и без него.
+        svgRef.current?.setPointerCapture(drag.pointerId);
+      } catch {
+        // NotFoundError для неактивного pointerId — игнорируем
+      }
+      setHover(null);
+      setPanning(true);
+    }
+    if (drag.panning) {
+      const w = TILE * 2 ** drag.view0.z;
+      setView({
+        z: drag.view0.z,
+        cx: drag.view0.cx - (p.x - drag.x0) / w,
+        cy: drag.view0.cy - (p.y - drag.y0) / w,
+      });
+    }
+  };
+  const endPan = (e: React.PointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    dragRef.current = null;
+    setPanning(false);
+  };
 
   if (!layout) {
     return (
@@ -335,12 +515,20 @@ export function MapCard({
 
       <div className="relative">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${VB_W} ${VB_H}`}
-          className="block w-full"
+          className={`block w-full select-none ${panning ? "cursor-grabbing" : "cursor-grab"}`}
+          // touch-action: none — тач-драг уходит в панораму, не в скролл страницы
+          style={{ touchAction: "none" }}
           role="img"
           aria-label={`${spec.title}. Карта: ${spec.points.length} точек${
             scale.hasValues ? `, ${valueLabel} от ${numFmt.format(scale.min)} до ${numFmt.format(scale.max)}` : ""
           }`}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endPan}
+          onPointerCancel={endPan}
+          onDoubleClick={() => setView(null)}
         >
           <defs>
             <clipPath id={clipId}>
@@ -362,8 +550,8 @@ export function MapCard({
                 href={t.url}
                 x={t.px}
                 y={t.py}
-                width={TILE}
-                height={TILE}
+                width={proj.tileSize}
+                height={proj.tileSize}
                 opacity={0.75}
                 onLoad={() => setTilesLoaded((n) => n + 1)}
                 onError={(e) => {
@@ -496,6 +684,8 @@ export function MapCard({
                     onFocus={() => setHover({ idx: i, cx: c.cx, cy: c.cy })}
                     onBlur={() => setHover(null)}
                     onClick={() => fire(c.seedIdx)}
+                    // Быстрый двойной клик по маркеру — это два дрилла, а не сброс вида.
+                    onDoubleClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
                       if (clickable && (e.key === "Enter" || e.key === " ")) {
                         e.preventDefault();
@@ -508,6 +698,35 @@ export function MapCard({
             })}
           </g>
         </svg>
+
+        {/* Кнопки зума: то же, что pinch/Ctrl+колесо, но дискаверабельно */}
+        <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
+          <button
+            type="button"
+            aria-label="Приблизить"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-surface/90 font-mono text-[13px] leading-none text-muted transition-colors hover:text-foreground"
+            onClick={() => zoomBy(1)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            aria-label="Отдалить"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-surface/90 font-mono text-[13px] leading-none text-muted transition-colors hover:text-foreground"
+            onClick={() => zoomBy(-1)}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            aria-label="Сбросить обзор к охвату данных"
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-surface/90 font-mono text-[13px] leading-none text-muted transition-colors hover:text-foreground disabled:opacity-35 disabled:hover:text-muted"
+            onClick={() => setView(null)}
+            disabled={view === null}
+          >
+            ⟲
+          </button>
+        </div>
 
         {/* Тултип: имя — главное, величина и координаты — вторичные */}
         {hover && hovered && (
@@ -551,6 +770,7 @@ export function MapCard({
         {clustered ? "маркер — место на карте; близкие точки объединены, число внутри — сколько их" : "каждая точка — место на карте"}
         {scale.hasValues ? `; площадь и яркость — ${valueLabel}${clustered ? " (сумма в кластере)" : ""}` : ""}
         {clickable ? "; клик копает глубже" : ""}
+        {"; зум — кнопки или pinch/Ctrl+колесо, панорама — перетаскиванием, двойной клик — сброс"}
         {basemapVisible ? (
           <>
             {" · подложка © "}
