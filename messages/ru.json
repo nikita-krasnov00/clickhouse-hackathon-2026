@@ -1,0 +1,160 @@
+{
+  "meta": {
+    "description": "Рабочее место оператора платформы: агент исследует данные в ClickHouse и собирает интерактивные карточки-расследования"
+  },
+  "common": {
+    "verdictTitle": "Вердикт расследования"
+  },
+  "localeSwitcher": {
+    "label": "Язык"
+  },
+  "home": {
+    "tagline": "живой SQL-агент · ClickHouse + Trigger.dev"
+  },
+  "auth": {
+    "signOut": "Выйти"
+  },
+  "login": {
+    "intro": "Рабочее место оператора платформы. Вход по Google-аккаунту — агент и данные не должны быть доступны анонимно.",
+    "accessDenied": "Этому аккаунту вход не разрешён. Попросите добавить ваш email в AUTH_ALLOWED_EMAILS.",
+    "failed": "Войти не получилось ({error}). Попробуйте ещё раз.",
+    "googleButton": "Войти через Google"
+  },
+  "workbench": {
+    "composerAria": "Композер вопроса",
+    "placeholder": "Спросите про данные в ClickHouse — агент сам найдёт нужные таблицы",
+    "ask": "Спросить",
+    "feedAria": "Лента расследования",
+    "emptyIntro": "Задайте вопрос по данным в ClickHouse — агент исследует схему, выберет таблицы, напишет SQL и вернёт интерактивные карточки. Клики по точкам, строкам и ячейкам раскрывают следующий слой.",
+    "startWithExample": "Начните с примера:",
+    "askFailed": "Не удалось запустить ран: {message}",
+    "contractError": "Ответ /api/ask не соответствует контракту askResponseSchema",
+    "whyQuestion": "Почему? Разбери подробнее: {selection} (клик по карточке «{title}»)"
+  },
+  "run": {
+    "connecting": "запускаю",
+    "running": "расследую",
+    "done": "готово",
+    "failed": "не смог",
+    "elapsed": "{seconds} с",
+    "howIDidIt": "Как я это делал — {count, plural, one {# шаг} few {# шага} many {# шагов} other {# шага}} · {seconds} с",
+    "failedTitle": "Не смог довести расследование",
+    "failedDefault": "Ран завершился неудачей.",
+    "failedStatus": "Ран завершился со статусом {status}",
+    "attempt": "попытка {attempt}/3",
+    "startingPipeline": "Запускаю конвейер"
+  },
+  "steps": {
+    "exploring": "Изучаю схему",
+    "generating_sql": "Продумываю запросы",
+    "board_planned": "План дашборда",
+    "clarify": "Нужно уточнение",
+    "impossible": "Данных не хватает",
+    "reviewing": "Проверяю запрос",
+    "executing": "Выполняю",
+    "healing": "Чиню запрос",
+    "materializing": "Материализую срез",
+    "card_ready": "Карточка готова",
+    "card_failed": "Карточка не удалась",
+    "done": "Готово",
+    "error": "Ошибка"
+  },
+  "clarify": {
+    "placeholder": "Свой ответ…",
+    "submit": "Ответить",
+    "followUp": "{question}\n\nУточнение: {answer}"
+  },
+  "impossible": {
+    "available": "А вот что по этим данным спросить можно:"
+  },
+  "cards": {
+    "noData": "Нет данных",
+    "noPoints": "Нет точек для отображения",
+    "fallbackTitle": "Не смог отрисовать карточку",
+    "fallbackKindUnknown": "неизвестен",
+    "fallbackBody": "Спек не прошёл валидацию контрактом view-spec. Это фоллбек, а не пустой экран — сырые данные ниже.",
+    "details": "Детали",
+    "insight": "Вывод:",
+    "metric": "Метрика:"
+  },
+  "confidence": {
+    "low": "низкая уверенность",
+    "medium": "средняя уверенность",
+    "high": "высокая уверенность"
+  },
+  "bignumber": {
+    "deltaTitle": "Изменение к базе сравнения, %"
+  },
+  "leaderboard": {
+    "sort": "Сортировать",
+    "rowClickHint": "Клик по строке — {label}"
+  },
+  "heatmap": {
+    "cellClickHint": "Клик по ячейке — {label}"
+  },
+  "timeline": {
+    "anomalyZone": "зона аномалии",
+    "reset": "сброс",
+    "hiddenSeries": "показаны {shown, plural, one {# серия} few {# серии} many {# серий} other {# серии}} из {total} (по объёму); для полной картины двух измерений уместнее heatmap",
+    "markersHidden": "точки скрыты при плотном ряде — приблизьте для деталей",
+    "howTo": "тяните по графику — зум диапазона · pinch/Ctrl+колесо — зум · Shift+колесо — панорама · двойной клик — сброс"
+  },
+  "scatter": {
+    "noTrend": "точек мало для линии тренда",
+    "points": "{count, plural, one {# точка} few {# точки} many {# точек} other {# точки}}",
+    "logScaleNote": "лог-шкала",
+    "axisLog": "(лог)",
+    "noCorrelation": "связи почти нет",
+    "correlation": "{strength, select, strong {сильная} moderate {умеренная} weak {слабая} other {}} {direction, select, direct {прямая} inverse {обратная} other {}} связь",
+    "ariaWithTrend": "{title}. Корреляция r={r}, {description}",
+    "howTo": "каждая точка — одна сущность{hasLabels, select, yes { (наведите — имя и точные значения)} other {}}; пунктир — линия тренда: наклон вверх ↗ = связь прямая, вниз ↘ = обратная, плоская = связи нет"
+  },
+  "map": {
+    "valueFallback": "значение",
+    "noValues": "точки без величины",
+    "points": "{count, plural, one {# точка} few {# точки} many {# точек} other {# точки}}",
+    "clusters": "{count, plural, one {# кластер} few {# кластера} many {# кластеров} other {# кластера}}",
+    "ariaBase": "{title}. Карта: {points}",
+    "ariaRange": ", {label} от {min} до {max}",
+    "zoomIn": "Приблизить",
+    "zoomOut": "Отдалить",
+    "resetView": "Сбросить обзор к охвату данных",
+    "nearby": "{count, plural, one {# точка} few {# точки} many {# точек} other {# точек}} рядом",
+    "valueSum": "{label} (сумма)",
+    "drillCluster": "Копнуть в этот кластер",
+    "howToClustered": "маркер — место на карте; близкие точки объединены, число внутри — сколько их",
+    "howToEach": "каждая точка — место на карте",
+    "howToValue": "; площадь и яркость — {label}",
+    "howToValueClusterSuffix": " (сумма в кластере)",
+    "howToClick": "; клик копает глубже",
+    "howToNav": "; зум — кнопки или pinch/Ctrl+колесо, панорама — перетаскиванием, двойной клик — сброс",
+    "attribution": " · подложка © ",
+    "offline": " · подложка недоступна — показана градусная сетка"
+  },
+  "boxplot": {
+    "ariaMedian": "{label} · медиана {value}",
+    "tooltipMedian": "{label}: медиана {value}",
+    "logScale": "лог-шкала",
+    "logSuffix": " (лог-шкала)"
+  },
+  "funnel": {
+    "overallLabel": "Сквозная конверсия:",
+    "overallDetail": "— {last} из {first} ({firstLabel} → {lastLabel})",
+    "ofFirst": "{pct} от «{label}»"
+  },
+  "graph": {
+    "hub": "хаб",
+    "anomalyScale": "аномальность (score 0 → 1)",
+    "noNodes": "Нет узлов для отображения",
+    "links": "{count, plural, one {# связь} few {# связи} many {# связей} other {# связи}}",
+    "askWhySuffix": "спросить «почему?»",
+    "whyNode": "Почему этот узел в кластере? →",
+    "topShown": "Показаны топ-{max} узлов по score из {total}",
+    "clickHint": "Клик по узлу — спросить агента «почему?»"
+  },
+  "devCards": {
+    "title": "Витрина карточек · {count, plural, one {# вид} few {# вида} many {# видов} other {# вида}}",
+    "intro": "Примеры из VIEW_SPEC_CATALOG через настоящий ViewSpecCard. Клик по элементу карточки печатает ClickContext ниже.",
+    "placeholder": "ClickContext появится здесь после клика по карточке"
+  }
+}

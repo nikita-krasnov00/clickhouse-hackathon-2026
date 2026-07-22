@@ -3,28 +3,26 @@
  * (low/medium/high — цветовая шкала со значком, не только цвет), стат-тайлы
  * evidence (label/value/detail).
  */
+import { useTranslations } from "next-intl";
 import type { VerdictSpec } from "@/lib/contracts";
+import { useNumberFormat } from "@/lib/i18n/formats";
 
-const numFmt = new Intl.NumberFormat("ru-RU");
-
+/** Значок/цвета бейджа уверенности; подписи — в messages (confidence.*). */
 const CONFIDENCE: Record<
   VerdictSpec["confidence"],
-  { label: string; icon: string; color: string; bg: string }
+  { icon: string; color: string; bg: string }
 > = {
   low: {
-    label: "низкая уверенность",
     icon: "○",
     color: "var(--muted)",
     bg: "rgba(139, 147, 167, 0.12)",
   },
   medium: {
-    label: "средняя уверенность",
     icon: "◐",
     color: "var(--viz-warning)",
     bg: "rgba(250, 178, 25, 0.12)",
   },
   high: {
-    label: "высокая уверенность",
     icon: "●",
     color: "var(--viz-good)",
     bg: "rgba(12, 163, 12, 0.12)",
@@ -32,6 +30,8 @@ const CONFIDENCE: Record<
 };
 
 export function VerdictCard({ spec }: { spec: VerdictSpec }) {
+  const t = useTranslations("confidence");
+  const numFmt = useNumberFormat();
   const conf = CONFIDENCE[spec.confidence];
   return (
     <div>
@@ -41,7 +41,7 @@ export function VerdictCard({ spec }: { spec: VerdictSpec }) {
           style={{ color: conf.color, background: conf.bg }}
         >
           <span aria-hidden>{conf.icon}</span>
-          {conf.label}
+          {t(spec.confidence)}
         </span>
       </div>
 

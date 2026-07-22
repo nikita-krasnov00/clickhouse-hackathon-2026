@@ -149,7 +149,11 @@ export const runStepSchema = z.discriminatedUnion("step", [
 export type RunStep = z.infer<typeof runStepSchema>;
 export type RunStepName = RunStep["step"];
 
-/** Подписи шагов для прогресса в UI (C2) — одно место правды. */
+/**
+ * Русские подписи шагов — справочник/фоллбек. UI берёт локализованные подписи
+ * из messages/{en,ru,el}.json (неймспейс `steps`, ключи совпадают с RunStepName);
+ * при добавлении шага обновить и словари.
+ */
 export const RUN_STEP_LABELS: Record<RunStepName, string> = {
   exploring: "Изучаю схему",
   generating_sql: "Продумываю запросы",

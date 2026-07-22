@@ -18,6 +18,7 @@
  *
  * Если /api/ask вернул ошибку (runId нет) — карточка сразу в failed.
  */
+import { useTranslations } from "next-intl";
 import type { RunStep, ViewSpec } from "@/lib/contracts";
 import { useElapsedSeconds } from "@/lib/hooks/useElapsedSeconds";
 import {
@@ -45,15 +46,15 @@ export type Investigation = {
   askError?: string;
 };
 
+/** Стили бейджа фазы; подписи — в messages (run.connecting и т.д.). */
 const PHASE_BADGE: Record<
   InvestigationRunState["phase"],
-  { label: string; className: string; style?: React.CSSProperties }
+  { className: string; style?: React.CSSProperties }
 > = {
-  connecting: { label: "запускаю", className: "border-border text-muted" },
-  running: { label: "расследую", className: "animate-pulse border-accent/60 text-accent" },
-  done: { label: "готово", className: "border-border", style: { color: "var(--viz-good)" } },
+  connecting: { className: "border-border text-muted" },
+  running: { className: "animate-pulse border-accent/60 text-accent" },
+  done: { className: "border-border", style: { color: "var(--viz-good)" } },
   failed: {
-    label: "не смог",
     className: "border-border",
     style: { color: "var(--viz-critical)" },
   },
@@ -67,6 +68,7 @@ export function FailedFallback({
   state: InvestigationRunState;
   askError?: string;
 }) {
+  const t = useTranslations("run");
   const healingSteps = state.steps.filter((s) => s.step === "healing");
   return (
     <div
@@ -74,17 +76,17 @@ export function FailedFallback({
       style={{ borderColor: "var(--viz-anomaly-edge)" }}
     >
       <p className="text-sm font-medium" style={{ color: "var(--viz-critical)" }}>
-        Не смог довести расследование
+        {t("failedTitle")}
       </p>
       <p className="mt-1 text-xs leading-relaxed text-muted">
-        {askError ?? state.errorMessage ?? "Ран завершился неудачей."}
+        {askError ?? state.errorMessage ?? t("failedDefault")}
       </p>
       {healingSteps.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1">
           {healingSteps.map((s, i) => (
             <li key={i} className="font-mono text-[10px] leading-relaxed text-muted">
               <span style={{ color: "var(--viz-warning)" }}>
-                попытка {s.attempt}/3
+                {t("attempt", { attempt: s.attempt })}
               </span>
               {s.error ? ` — ${s.error.length > 200 ? `${s.error.slice(0, 200)}…` : s.error}` : ""}
             </li>
@@ -105,6 +107,7 @@ export function InvestigationCard({
   /** C2: клик по чипу clarify/impossible — новый ран тем же submit-флоу Workbench. */
   onAsk?: (question: string) => void;
 }) {
+  const t = useTranslations("run");
   const { id, question, askedAt, runId, publicAccessToken, askError } = investigation;
   const state = useInvestigationRun(runId, publicAccessToken);
 
@@ -136,7 +139,7 @@ export function InvestigationCard({
           className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] ${badge.className}`}
           style={badge.style}
         >
-          {badge.label} · {elapsed} с
+          {t(phase)} · {t("elapsed", { seconds: elapsed })}
         </span>
       </header>
       {runId && (
@@ -155,8 +158,7 @@ export function InvestigationCard({
       {!askError && phase === "done" && (
         <details className="mt-2">
           <summary className="cursor-pointer text-[11px] text-muted select-none hover:text-foreground">
-            Как я это делал — {state.steps.length}{" "}
-            {stepsNoun(state.steps.length)} · {elapsed} с
+            {t("howIDidIt", { count: state.steps.length, seconds: elapsed })}
           </summary>
           <div className="mt-2">
             <RunProgress steps={state.steps} phase={phase} />
@@ -199,12 +201,4 @@ export function InvestigationCard({
         )}
     </article>
   );
-}
-
-function stepsNoun(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "шаг";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "шага";
-  return "шагов";
 }

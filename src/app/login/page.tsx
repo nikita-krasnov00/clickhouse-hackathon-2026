@@ -4,7 +4,9 @@
  * входа — возврат на callbackUrl (только внутренний путь, без open-redirect).
  */
 import { redirect } from "next/navigation";
+import { getTranslations } from "next-intl/server";
 import { auth, signIn } from "@/auth";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 
 type Props = {
   searchParams: Promise<{ callbackUrl?: string; error?: string }>;
@@ -37,6 +39,7 @@ export default async function LoginPage({ searchParams }: Props) {
   const session = await auth();
   if (session) redirect("/");
 
+  const t = await getTranslations("login");
   const { callbackUrl, error } = await searchParams;
   // Возврат только на внутренний путь ("//host" — тоже внешний, отсекаем).
   const redirectTo =
@@ -48,18 +51,14 @@ export default async function LoginPage({ searchParams }: Props) {
     <main className="flex flex-1 items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-8 text-center">
         <h1 className="text-xl font-semibold tracking-tight">Insight Desk</h1>
-        <p className="mt-2 text-sm text-muted">
-          Рабочее место оператора платформы. Вход по Google-аккаунту — агент и
-          данные не должны быть доступны анонимно.
-        </p>
+        <p className="mt-2 text-sm text-muted">{t("intro")}</p>
         {error === "AccessDenied" ? (
           <p className="mt-4 rounded-lg border border-[color:var(--viz-critical)]/40 bg-[color:var(--viz-critical)]/10 px-3 py-2 text-sm text-[color:var(--viz-critical)]">
-            Этому аккаунту вход не разрешён. Попросите добавить ваш email в
-            AUTH_ALLOWED_EMAILS.
+            {t("accessDenied")}
           </p>
         ) : error ? (
           <p className="mt-4 rounded-lg border border-[color:var(--viz-warning)]/40 bg-[color:var(--viz-warning)]/10 px-3 py-2 text-sm text-[color:var(--viz-warning)]">
-            Войти не получилось ({error}). Попробуйте ещё раз.
+            {t("failed", { error })}
           </p>
         ) : null}
         <form
@@ -74,9 +73,12 @@ export default async function LoginPage({ searchParams }: Props) {
             className="inline-flex w-full items-center justify-center gap-3 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-[#1f1f1f] transition-opacity hover:opacity-90"
           >
             <GoogleMark />
-            Войти через Google
+            {t("googleButton")}
           </button>
         </form>
+        <div className="mt-6 flex justify-center">
+          <LocaleSwitcher />
+        </div>
       </div>
     </main>
   );

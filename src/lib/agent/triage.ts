@@ -217,14 +217,20 @@ const suggestAnswerSchema = z.object({
  * Вопросы-пресеты для главной: 4 коротких вопроса по живому каталогу таблиц
  * (разные базы — разные вопросы). Быстрая модель, без reparse-страховки:
  * пресеты некритичны, сбой обрабатывает вызывающий (/api/suggest → []).
+ *
+ * language — язык вопросов ("English"/"Russian"/"Greek"), от локали UI:
+ * пресеты видны до первого вопроса пользователя, поэтому язык задаёт интерфейс.
  */
-export async function suggestQuestions(catalog: CatalogTable[]): Promise<string[]> {
+export async function suggestQuestions(
+  catalog: CatalogTable[],
+  language: string = "Russian",
+): Promise<string[]> {
   const { content } = await chatComplete(
     [
       {
         role: "system",
         content:
-          "You suggest example questions for «Insight Desk» — an agent answering analytical questions over the ClickHouse tables below. Suggest 4 SHORT questions (≤ 80 characters each) a curious analyst could ask RIGHT NOW over these specific tables. If several databases exist, cover different ones. Write the questions in Russian. Reply with ONLY strict JSON: {\"questions\":[\"…\",\"…\",\"…\",\"…\"]}",
+          `You suggest example questions for «Insight Desk» — an agent answering analytical questions over the ClickHouse tables below. Suggest 4 SHORT questions (≤ 80 characters each) a curious analyst could ask RIGHT NOW over these specific tables. If several databases exist, cover different ones. Write the questions in ${language}. Reply with ONLY strict JSON: {"questions":["…","…","…","…"]}`,
       },
       {
         role: "user",

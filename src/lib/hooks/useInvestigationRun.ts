@@ -23,6 +23,7 @@
  *   - phase     — connecting | running | done | failed (для рендера).
  */
 import { useEffect, useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { runStepSchema, type RunStep, type ViewKind, type ViewSpec } from "@/lib/contracts";
 import type { investigateTask } from "@/trigger/investigate";
@@ -130,8 +131,8 @@ function parseSteps(raw: unknown): RunStep[] {
 }
 
 /** Заголовок внеплановой карточки: verdict особый — в спеке нет поля title. */
-function specBoardTitle(spec: ViewSpec): string {
-  return spec.kind === "verdict" ? "Вердикт расследования" : spec.title;
+function specBoardTitle(spec: ViewSpec, verdictTitle: string): string {
+  return spec.kind === "verdict" ? verdictTitle : spec.title;
 }
 
 /**
@@ -142,7 +143,7 @@ function specBoardTitle(spec: ViewSpec): string {
  * готовая внеплановая карточка, card_failed без пары в манифесте отбрасывается
  * (её скелету всё равно неоткуда взяться).
  */
-function computeBoardCards(steps: RunStep[]): BoardCard[] {
+function computeBoardCards(steps: RunStep[], verdictTitle: string): BoardCard[] {
   const plan = steps.find((s) => s.step === "board_planned");
   if (!plan) return [];
 
@@ -170,7 +171,7 @@ function computeBoardCards(steps: RunStep[]): BoardCard[] {
         extra.push({
           cardId: s.cardId ?? `extra-${extra.length}`,
           kind: s.viewSpec.kind,
-          title: specBoardTitle(s.viewSpec),
+          title: specBoardTitle(s.viewSpec, verdictTitle),
           status: "ready",
           spec: s.viewSpec,
           sql: s.sql,
@@ -197,6 +198,8 @@ export function useInvestigationRun(
   runId: string | undefined,
   publicAccessToken: string | undefined,
 ): InvestigationRunState {
+  const tRun = useTranslations("run");
+  const tCommon = useTranslations("common");
   const enabled = Boolean(runId && publicAccessToken);
   const { run, error } = useRealtimeRun<typeof investigateTask>(runId, {
     accessToken: publicAccessToken,
@@ -234,7 +237,7 @@ export function useInvestigationRun(
           : readySpecs
         : finalSpecs;
 
-    const boardCards = computeBoardCards(steps);
+    const boardCards = computeBoardCards(steps, tCommon("verdictTitle"));
 
     const errorStep = steps.find((s) => s.step === "error");
     const failed =
@@ -249,7 +252,7 @@ export function useInvestigationRun(
     else phase = "connecting";
 
     const errorMessage = errorStep?.message ?? error?.message ??
-      (failed ? `Ран завершился со статусом ${status}` : undefined);
+      (failed ? tRun("failedStatus", { status: String(status) }) : undefined);
 
     return {
       phase,
@@ -260,5 +263,5 @@ export function useInvestigationRun(
       errorMessage,
       runStatus: status,
     };
-  }, [run, error, polled, realtimeSteps]);
+  }, [run, error, polled, realtimeSteps, tRun, tCommon]);
 }

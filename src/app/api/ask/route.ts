@@ -9,19 +9,28 @@
  * Ошибки: 400 — мусор на входе (с zod-деталями), 502 — Trigger.dev API недоступен.
  */
 import { NextResponse } from "next/server";
+import { cookies, headers } from "next/headers";
 import { askRequestSchema, askResponseSchema } from "@/lib/contracts";
 import { triggerInvestigate, TriggerApiError } from "@/lib/trigger-api";
+import { apiMessage } from "@/lib/i18n/api-messages";
+import { LOCALE_COOKIE, negotiateLocale } from "@/lib/i18n/locale";
 
 // Node.js runtime: SDK Trigger.dev ходит наружу с TRIGGER_SECRET_KEY из env.
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
+  const locale = negotiateLocale(
+    cookieStore.get(LOCALE_COOKIE)?.value,
+    headerStore.get("accept-language"),
+  );
+
   let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json(
-      { error: "Тело запроса — не валидный JSON" },
+      { error: apiMessage(locale, "invalidJson") },
       { status: 400 },
     );
   }
@@ -29,7 +38,7 @@ export async function POST(req: Request) {
   const parsed = askRequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Невалидное тело запроса /api/ask", issues: parsed.error.issues },
+      { error: apiMessage(locale, "invalidAskBody"), issues: parsed.error.issues },
       { status: 400 },
     );
   }

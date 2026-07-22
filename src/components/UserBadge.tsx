@@ -4,12 +4,14 @@
  * без сессии просто ничего не рендерит.
  */
 import Image from "next/image";
+import { getTranslations } from "next-intl/server";
 import { auth, signOut } from "@/auth";
 
 export async function UserBadge() {
   const session = await auth();
   const user = session?.user;
   if (!user) return null;
+  const t = await getTranslations("auth");
 
   return (
     <div className="flex items-center gap-3">
@@ -33,7 +35,7 @@ export async function UserBadge() {
           type="submit"
           className="rounded-full border border-border px-3 py-1.5 text-xs text-muted transition-colors hover:border-accent/60 hover:text-foreground"
         >
-          Выйти
+          {t("signOut")}
         </button>
       </form>
     </div>

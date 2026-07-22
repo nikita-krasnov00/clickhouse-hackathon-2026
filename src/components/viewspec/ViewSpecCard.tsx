@@ -12,6 +12,7 @@
  * которые собирают ClickContext строго по семантике ClickTarget (см. click.ts).
  */
 import type { ReactNode } from "react";
+import { useTranslations } from "next-intl";
 import {
   viewSpecSchema,
   type ClickContext,
@@ -107,27 +108,23 @@ export function CardShell({
 
 /** Фоллбек: спек не прошёл валидацию контрактом. */
 function FallbackCard({ spec, error }: { spec: unknown; error: string }) {
+  const t = useTranslations("cards");
   const kind =
     typeof spec === "object" && spec !== null && "kind" in spec
       ? String((spec as { kind: unknown }).kind)
-      : "неизвестен";
+      : t("fallbackKindUnknown");
   return (
     <article className="rounded-xl border border-dashed border-border bg-surface p-4">
       <header className="mb-2 flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-medium text-muted">
-          Не смог отрисовать карточку
-        </h2>
+        <h2 className="text-sm font-medium text-muted">{t("fallbackTitle")}</h2>
         <span className="shrink-0 rounded-full border border-border px-2 py-0.5 font-mono text-[10px] text-muted">
           kind: {kind}
         </span>
       </header>
-      <p className="text-xs text-muted">
-        Спек не прошёл валидацию контрактом view-spec. Это фоллбек, а не пустой
-        экран — сырые данные ниже.
-      </p>
+      <p className="text-xs text-muted">{t("fallbackBody")}</p>
       <details className="mt-2 text-xs text-muted">
         <summary className="cursor-pointer select-none hover:text-foreground">
-          Детали
+          {t("details")}
         </summary>
         <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-background p-2 font-mono text-[10px] leading-relaxed whitespace-pre-wrap">
           {error}
@@ -144,18 +141,19 @@ function FallbackCard({ spec, error }: { spec: unknown; error: string }) {
  * объяснение метрики. Рендерится в общей обёртке — одинаково у всех видов.
  */
 function CardInsight({ insight, metricNote }: { insight?: string; metricNote?: string }) {
+  const t = useTranslations("cards");
   if (!insight && !metricNote) return null;
   return (
     <footer className="mt-3 flex flex-col gap-1 border-t border-border pt-2.5">
       {insight && (
         <p className="text-[13px] leading-snug">
-          <span className="mr-1.5 font-semibold text-accent">Вывод:</span>
+          <span className="mr-1.5 font-semibold text-accent">{t("insight")}</span>
           {insight}
         </p>
       )}
       {metricNote && (
         <p className="text-[11px] leading-snug text-muted">
-          <span className="mr-1">Метрика:</span>
+          <span className="mr-1">{t("metric")}</span>
           {metricNote}
         </p>
       )}
@@ -172,6 +170,7 @@ export function ViewSpecCard({
   spec: unknown;
   onClickContext?: SpecClickHandler;
 }) {
+  const tCommon = useTranslations("common");
   const parsed = viewSpecSchema.safeParse(spec);
   if (!parsed.success) {
     return <FallbackCard spec={spec} error={parsed.error.message} />;
@@ -181,7 +180,7 @@ export function ViewSpecCard({
   return (
     <CardShell
       kind={v.kind}
-      title={isVerdict ? "Вердикт расследования" : v.title}
+      title={isVerdict ? tCommon("verdictTitle") : v.title}
       accent={isVerdict}
     >
       {renderByKind(v, {

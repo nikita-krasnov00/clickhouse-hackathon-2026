@@ -19,7 +19,9 @@
  * поверхности, hover-тултип, хит-таргет r=12. Клик по точке → ClickContext.
  */
 import { useId, useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { AxisScale, ClickContext, ScatterSpec } from "@/lib/contracts";
+import { useNumberFormat } from "@/lib/i18n/formats";
 import {
   buildClickContext,
   findClickTarget,
@@ -29,9 +31,6 @@ import {
 const VB_W = 640;
 const VB_H = 280;
 const M = { top: 18, right: 16, bottom: 48, left: 56 };
-
-/** Точное значение в тултип (разделитель тысяч). */
-const numFmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 
 /** Компактная подпись тика: 50, 500, 5k, 50k, 1.2M. */
 function fmtCompact(v: number): string {
@@ -164,15 +163,6 @@ function computeTrend(
   };
 }
 
-/** Качественная подпись силы и направления связи по |r|. */
-function describeR(r: number): string {
-  const a = Math.abs(r);
-  const strength =
-    a >= 0.7 ? "сильная" : a >= 0.4 ? "умеренная" : a >= 0.2 ? "слабая" : "почти нет";
-  if (a < 0.2) return "связи почти нет";
-  return `${strength} ${r > 0 ? "прямая" : "обратная"} связь`;
-}
-
 type Hover = { idx: number; cx: number; cy: number } | null;
 
 export function ScatterCard({
@@ -184,10 +174,25 @@ export function ScatterCard({
   cardId: string;
   onClickContext?: (ctx: ClickContext) => void;
 }) {
+  const t = useTranslations("scatter");
+  const tCards = useTranslations("cards");
+  /** Точное значение в тултип (разделитель тысяч). */
+  const numFmt = useNumberFormat({ maximumFractionDigits: 2 });
   const [hover, setHover] = useState<Hover>(null);
   const clipId = useId();
   const pointTarget = findClickTarget(spec.clicks, "point");
   const clickable = Boolean(pointTarget && onClickContext);
+
+  /** Качественная подпись силы и направления связи по |r|. */
+  const describeR = (r: number): string => {
+    const a = Math.abs(r);
+    if (a < 0.2) return t("noCorrelation");
+    const strength = a >= 0.7 ? "strong" : a >= 0.4 ? "moderate" : "weak";
+    return t("correlation", {
+      strength,
+      direction: r > 0 ? "direct" : "inverse",
+    }).trim();
+  };
 
   const layout = useMemo(() => {
     if (spec.points.length === 0) return null;
@@ -203,7 +208,7 @@ export function ScatterCard({
 
   if (!layout) {
     return (
-      <p className="px-1 py-6 text-center text-sm text-muted">Нет точек для отображения</p>
+      <p className="px-1 py-6 text-center text-sm text-muted">{tCards("noPoints")}</p>
     );
   }
   const { ax, ay, xScale, yScale, trend } = layout;
@@ -223,7 +228,7 @@ export function ScatterCard({
   const hovered = hover !== null ? spec.points[hover.idx] : null;
   const logNote =
     (xScale === "log" ? 1 : 0) + (yScale === "log" ? 1 : 0) > 0
-      ? " · лог-шкала"
+      ? ` · ${t("logScaleNote")}`
       : "";
 
   return (
@@ -243,10 +248,11 @@ export function ScatterCard({
             <span className="text-muted">· {describeR(trend.r)}</span>
           </span>
         ) : (
-          <span className="text-xs text-muted">точек мало для линии тренда</span>
+          <span className="text-xs text-muted">{t("noTrend")}</span>
         )}
         <span className="text-[11px] text-muted/80">
-          {spec.points.length} точек{logNote}
+          {t("points", { count: spec.points.length })}
+          {logNote}
         </span>
       </div>
 
@@ -257,7 +263,11 @@ export function ScatterCard({
           role="img"
           aria-label={
             trend
-              ? `${spec.title}. Корреляция r=${trend.r.toFixed(2)}, ${describeR(trend.r)}`
+              ? t("ariaWithTrend", {
+                  title: spec.title,
+                  r: trend.r.toFixed(2),
+                  description: describeR(trend.r),
+                })
               : spec.title
           }
         >
@@ -390,7 +400,7 @@ export function ScatterCard({
             opacity={0.8}
           >
             {spec.xLabel}
-            {xScale === "log" ? " (лог)" : ""} →
+            {xScale === "log" ? ` ${t("axisLog")}` : ""} →
           </text>
           <text
             x={13}
@@ -402,7 +412,7 @@ export function ScatterCard({
             transform={`rotate(-90 13 ${M.top + (VB_H - M.top - M.bottom) / 2})`}
           >
             {spec.yLabel}
-            {yScale === "log" ? " (лог)" : ""} →
+            {yScale === "log" ? ` ${t("axisLog")}` : ""} →
           </text>
         </svg>
 
@@ -436,9 +446,7 @@ export function ScatterCard({
 
       {/* Как читать */}
       <p className="mt-1 px-1 text-[10px] text-muted/80">
-        каждая точка — одна сущность{spec.points[0]?.label ? " (наведите — имя и точные значения)" : ""};
-        пунктир — линия тренда: наклон вверх ↗ = связь прямая, вниз ↘ = обратная,
-        плоская = связи нет
+        {t("howTo", { hasLabels: spec.points[0]?.label ? "yes" : "no" })}
       </p>
     </div>
   );

@@ -24,7 +24,9 @@
  * ближайшего целого зума и масштабируются (2^(z − zInt)).
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { ClickContext, MapPoint, MapSpec } from "@/lib/contracts";
+import { useNumberFormat } from "@/lib/i18n/formats";
 import { buildClickContext, findClickTarget, mapPointElementFields } from "./click";
 
 const VB_W = 640;
@@ -47,8 +49,6 @@ const PAN_THRESHOLD = 4;
  * что кластеризация самоадаптивна и не портит разреженные карты.
  */
 const CLUSTER_RADIUS = 18;
-
-const numFmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 
 /** Тайлы CARTO (dark) — бесплатная подложка с обязательной атрибуцией. */
 function tileUrl(z: number, x: number, y: number): string {
@@ -324,6 +324,9 @@ export function MapCard({
   cardId: string;
   onClickContext?: (ctx: ClickContext) => void;
 }) {
+  const t = useTranslations("map");
+  const tCards = useTranslations("cards");
+  const numFmt = useNumberFormat({ maximumFractionDigits: 2 });
   const [hover, setHover] = useState<Hover>(null);
   /** Сколько тайлов подложки реально загрузилось: 0 → оффлайн-фоллбек с сеткой. */
   const [tilesLoaded, setTilesLoaded] = useState(0);
@@ -466,7 +469,7 @@ export function MapCard({
 
   if (!layout) {
     return (
-      <p className="px-1 py-6 text-center text-sm text-muted">Нет точек для отображения</p>
+      <p className="px-1 py-6 text-center text-sm text-muted">{tCards("noPoints")}</p>
     );
   }
   const { proj, scale, clusters, order, clustered } = layout;
@@ -486,7 +489,7 @@ export function MapCard({
   };
 
   const hovered = hover !== null ? clusters[hover.idx] : null;
-  const valueLabel = spec.valueLabel ?? "значение";
+  const valueLabel = spec.valueLabel ?? t("valueFallback");
 
   return (
     <div>
@@ -504,12 +507,12 @@ export function MapCard({
             </span>
           </span>
         ) : (
-          <span className="text-muted">точки без величины</span>
+          <span className="text-muted">{t("noValues")}</span>
         )}
         <span className="text-[11px] text-muted/80">
           {clustered
-            ? `${spec.points.length} точек → ${clusters.length} кластеров`
-            : `${spec.points.length} точек`}
+            ? `${t("points", { count: spec.points.length })} → ${t("clusters", { count: clusters.length })}`
+            : t("points", { count: spec.points.length })}
         </span>
       </div>
 
@@ -521,8 +524,17 @@ export function MapCard({
           // touch-action: none — тач-драг уходит в панораму, не в скролл страницы
           style={{ touchAction: "none" }}
           role="img"
-          aria-label={`${spec.title}. Карта: ${spec.points.length} точек${
-            scale.hasValues ? `, ${valueLabel} от ${numFmt.format(scale.min)} до ${numFmt.format(scale.max)}` : ""
+          aria-label={`${t("ariaBase", {
+            title: spec.title,
+            points: t("points", { count: spec.points.length }),
+          })}${
+            scale.hasValues
+              ? t("ariaRange", {
+                  label: valueLabel,
+                  min: numFmt.format(scale.min),
+                  max: numFmt.format(scale.max),
+                })
+              : ""
           }`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -672,7 +684,7 @@ export function MapCard({
                       clickable
                         ? `${
                             c.count > 1
-                              ? `${c.count} точек около ${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`
+                              ? `${t("nearby", { count: c.count })} · ${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`
                               : c.label ?? `${c.lat.toFixed(4)}, ${c.lon.toFixed(4)}`
                           }${
                             c.value !== undefined ? ` — ${valueLabel} ${numFmt.format(c.value)}` : ""
@@ -703,7 +715,7 @@ export function MapCard({
         <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
           <button
             type="button"
-            aria-label="Приблизить"
+            aria-label={t("zoomIn")}
             className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-surface/90 font-mono text-[13px] leading-none text-muted transition-colors hover:text-foreground"
             onClick={() => zoomBy(1)}
           >
@@ -711,7 +723,7 @@ export function MapCard({
           </button>
           <button
             type="button"
-            aria-label="Отдалить"
+            aria-label={t("zoomOut")}
             className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-surface/90 font-mono text-[13px] leading-none text-muted transition-colors hover:text-foreground"
             onClick={() => zoomBy(-1)}
           >
@@ -719,7 +731,7 @@ export function MapCard({
           </button>
           <button
             type="button"
-            aria-label="Сбросить обзор к охвату данных"
+            aria-label={t("resetView")}
             className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-surface/90 font-mono text-[13px] leading-none text-muted transition-colors hover:text-foreground disabled:opacity-35 disabled:hover:text-muted"
             onClick={() => setView(null)}
             disabled={view === null}
@@ -740,7 +752,7 @@ export function MapCard({
           >
             {hovered.count > 1 ? (
               <div className="text-sm font-semibold whitespace-nowrap">
-                {hovered.count} точек рядом
+                {t("nearby", { count: hovered.count })}
               </div>
             ) : (
               hovered.label && (
@@ -750,7 +762,7 @@ export function MapCard({
             <div className="text-xs whitespace-nowrap text-muted">
               {hovered.value !== undefined && (
                 <>
-                  {hovered.count > 1 ? `${valueLabel} (сумма)` : valueLabel}:{" "}
+                  {hovered.count > 1 ? t("valueSum", { label: valueLabel }) : valueLabel}:{" "}
                   {numFmt.format(hovered.value)} ·{" "}
                 </>
               )}
@@ -758,7 +770,7 @@ export function MapCard({
             </div>
             {clickable && pointTarget?.label && (
               <div className="mt-0.5 text-[10px] whitespace-nowrap text-accent">
-                {hovered.count > 1 ? "Копнуть в этот кластер" : pointTarget.label} →
+                {hovered.count > 1 ? t("drillCluster") : pointTarget.label} →
               </div>
             )}
           </div>
@@ -767,13 +779,15 @@ export function MapCard({
 
       {/* Как читать + обязательная атрибуция подложки */}
       <p className="mt-1 px-1 text-[10px] text-muted/80">
-        {clustered ? "маркер — место на карте; близкие точки объединены, число внутри — сколько их" : "каждая точка — место на карте"}
-        {scale.hasValues ? `; площадь и яркость — ${valueLabel}${clustered ? " (сумма в кластере)" : ""}` : ""}
-        {clickable ? "; клик копает глубже" : ""}
-        {"; зум — кнопки или pinch/Ctrl+колесо, панорама — перетаскиванием, двойной клик — сброс"}
+        {clustered ? t("howToClustered") : t("howToEach")}
+        {scale.hasValues
+          ? `${t("howToValue", { label: valueLabel })}${clustered ? t("howToValueClusterSuffix") : ""}`
+          : ""}
+        {clickable ? t("howToClick") : ""}
+        {t("howToNav")}
         {basemapVisible ? (
           <>
-            {" · подложка © "}
+            {t("attribution")}
             <a
               href="https://www.openstreetmap.org/copyright"
               target="_blank"
@@ -793,7 +807,7 @@ export function MapCard({
             </a>
           </>
         ) : (
-          " · подложка недоступна — показана градусная сетка"
+          t("offline")
         )}
       </p>
     </div>

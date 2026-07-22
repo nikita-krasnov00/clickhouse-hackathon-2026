@@ -1,0 +1,160 @@
+{
+  "meta": {
+    "description": "Platform operator's workbench: an agent explores the data in ClickHouse and assembles interactive investigation cards"
+  },
+  "common": {
+    "verdictTitle": "Investigation verdict"
+  },
+  "localeSwitcher": {
+    "label": "Language"
+  },
+  "home": {
+    "tagline": "live SQL agent · ClickHouse + Trigger.dev"
+  },
+  "auth": {
+    "signOut": "Sign out"
+  },
+  "login": {
+    "intro": "Platform operator's workbench. Sign in with a Google account — the agent and the data must not be accessible anonymously.",
+    "accessDenied": "This account is not allowed to sign in. Ask to have your email added to AUTH_ALLOWED_EMAILS.",
+    "failed": "Sign-in failed ({error}). Please try again.",
+    "googleButton": "Sign in with Google"
+  },
+  "workbench": {
+    "composerAria": "Question composer",
+    "placeholder": "Ask about the data in ClickHouse — the agent will find the right tables itself",
+    "ask": "Ask",
+    "feedAria": "Investigation feed",
+    "emptyIntro": "Ask a question about the data in ClickHouse — the agent will explore the schema, pick tables, write SQL and return interactive cards. Clicking points, rows and cells drills into the next layer.",
+    "startWithExample": "Start with an example:",
+    "askFailed": "Couldn't start the run: {message}",
+    "contractError": "The /api/ask response doesn't match the askResponseSchema contract",
+    "whyQuestion": "Why? Dig into it: {selection} (click on the “{title}” card)"
+  },
+  "run": {
+    "connecting": "starting",
+    "running": "investigating",
+    "done": "done",
+    "failed": "failed",
+    "elapsed": "{seconds} s",
+    "howIDidIt": "How I did it — {count, plural, one {# step} other {# steps}} · {seconds} s",
+    "failedTitle": "Couldn't finish the investigation",
+    "failedDefault": "The run ended in failure.",
+    "failedStatus": "The run finished with status {status}",
+    "attempt": "attempt {attempt}/3",
+    "startingPipeline": "Starting the pipeline"
+  },
+  "steps": {
+    "exploring": "Exploring the schema",
+    "generating_sql": "Planning the queries",
+    "board_planned": "Dashboard plan",
+    "clarify": "Clarification needed",
+    "impossible": "Not enough data",
+    "reviewing": "Reviewing the query",
+    "executing": "Executing",
+    "healing": "Fixing the query",
+    "materializing": "Materializing a slice",
+    "card_ready": "Card ready",
+    "card_failed": "Card failed",
+    "done": "Done",
+    "error": "Error"
+  },
+  "clarify": {
+    "placeholder": "Your answer…",
+    "submit": "Reply",
+    "followUp": "{question}\n\nClarification: {answer}"
+  },
+  "impossible": {
+    "available": "Here's what this data can answer:"
+  },
+  "cards": {
+    "noData": "No data",
+    "noPoints": "No points to display",
+    "fallbackTitle": "Couldn't render the card",
+    "fallbackKindUnknown": "unknown",
+    "fallbackBody": "The spec failed validation against the view-spec contract. This is a fallback, not a blank screen — the raw data is below.",
+    "details": "Details",
+    "insight": "Takeaway:",
+    "metric": "Metric:"
+  },
+  "confidence": {
+    "low": "low confidence",
+    "medium": "medium confidence",
+    "high": "high confidence"
+  },
+  "bignumber": {
+    "deltaTitle": "Change vs. the comparison base, %"
+  },
+  "leaderboard": {
+    "sort": "Sort",
+    "rowClickHint": "Click a row — {label}"
+  },
+  "heatmap": {
+    "cellClickHint": "Click a cell — {label}"
+  },
+  "timeline": {
+    "anomalyZone": "anomaly window",
+    "reset": "reset",
+    "hiddenSeries": "showing {shown, plural, one {# series} other {# series}} of {total} (by volume); a heatmap fits the full two-dimensional picture better",
+    "markersHidden": "points are hidden on a dense series — zoom in for details",
+    "howTo": "drag across the chart — zoom into a range · pinch/Ctrl+wheel — zoom · Shift+wheel — pan · double-click — reset"
+  },
+  "scatter": {
+    "noTrend": "too few points for a trend line",
+    "points": "{count, plural, one {# point} other {# points}}",
+    "logScaleNote": "log scale",
+    "axisLog": "(log)",
+    "noCorrelation": "almost no correlation",
+    "correlation": "{strength, select, strong {strong} moderate {moderate} weak {weak} other {}} {direction, select, direct {positive} inverse {negative} other {}} correlation",
+    "ariaWithTrend": "{title}. Correlation r={r}, {description}",
+    "howTo": "each point is one entity{hasLabels, select, yes { (hover for the name and exact values)} other {}}; the dashed line is the trend: sloping up ↗ = positive, down ↘ = negative, flat = no correlation"
+  },
+  "map": {
+    "valueFallback": "value",
+    "noValues": "points without a value",
+    "points": "{count, plural, one {# point} other {# points}}",
+    "clusters": "{count, plural, one {# cluster} other {# clusters}}",
+    "ariaBase": "{title}. Map: {points}",
+    "ariaRange": ", {label} from {min} to {max}",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "resetView": "Reset view to the data extent",
+    "nearby": "{count, plural, one {# point} other {# points}} nearby",
+    "valueSum": "{label} (sum)",
+    "drillCluster": "Dig into this cluster",
+    "howToClustered": "a marker is a place on the map; nearby points are merged, the number inside is how many",
+    "howToEach": "each point is a place on the map",
+    "howToValue": "; area and brightness — {label}",
+    "howToValueClusterSuffix": " (sum within a cluster)",
+    "howToClick": "; a click digs deeper",
+    "howToNav": "; zoom — buttons or pinch/Ctrl+wheel, pan — drag, double-click — reset",
+    "attribution": " · basemap © ",
+    "offline": " · basemap unavailable — showing a coordinate grid"
+  },
+  "boxplot": {
+    "ariaMedian": "{label} · median {value}",
+    "tooltipMedian": "{label}: median {value}",
+    "logScale": "log scale",
+    "logSuffix": " (log scale)"
+  },
+  "funnel": {
+    "overallLabel": "End-to-end conversion:",
+    "overallDetail": "— {last} of {first} ({firstLabel} → {lastLabel})",
+    "ofFirst": "{pct} of “{label}”"
+  },
+  "graph": {
+    "hub": "hub",
+    "anomalyScale": "anomaly (score 0 → 1)",
+    "noNodes": "No nodes to display",
+    "links": "{count, plural, one {# link} other {# links}}",
+    "askWhySuffix": "ask “why?”",
+    "whyNode": "Why is this node in the cluster? →",
+    "topShown": "Showing the top {max} nodes by score out of {total}",
+    "clickHint": "Click a node — ask the agent “why?”"
+  },
+  "devCards": {
+    "title": "Card gallery · {count, plural, one {# kind} other {# kinds}}",
+    "intro": "Examples from VIEW_SPEC_CATALOG rendered through the real ViewSpecCard. Clicking a card element prints the ClickContext below.",
+    "placeholder": "The ClickContext will appear here after you click a card"
+  }
+}

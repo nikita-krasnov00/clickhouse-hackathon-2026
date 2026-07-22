@@ -12,7 +12,9 @@
  * семантике ClickTarget on:'box'.
  */
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { BoxplotGroup, BoxplotSpec, ClickContext } from "@/lib/contracts";
+import { useNumberFormat } from "@/lib/i18n/formats";
 import { boxElementFields, buildClickContext, findClickTarget } from "./click";
 
 const VB_W = 640;
@@ -23,8 +25,6 @@ const BOX_H = 16;
 const LOG_RATIO = 200;
 /** Максимум символов подписи группы — дальше многоточие. */
 const LABEL_MAX = 17;
-
-const numFmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 
 /** Компактная подпись тика: 50, 500, 5k, 50k, 1.2M (как в ScatterCard). */
 function fmtCompact(v: number): string {
@@ -100,6 +100,9 @@ export function BoxplotCard({
   cardId: string;
   onClickContext?: (ctx: ClickContext) => void;
 }) {
+  const t = useTranslations("boxplot");
+  const tCards = useTranslations("cards");
+  const numFmt = useNumberFormat({ maximumFractionDigits: 2 });
   const [hover, setHover] = useState<number | null>(null);
   const boxTarget = findClickTarget(spec.clicks, "box");
   const clickable = Boolean(boxTarget && onClickContext);
@@ -115,7 +118,7 @@ export function BoxplotCard({
   }, [spec.groups]);
 
   if (!layout) {
-    return <p className="px-1 py-6 text-center text-sm text-muted">Нет данных</p>;
+    return <p className="px-1 py-6 text-center text-sm text-muted">{tCards("noData")}</p>;
   }
   const { axis, vbH } = layout;
   const plotBottom = vbH - M.bottom;
@@ -235,7 +238,7 @@ export function BoxplotCard({
                 tabIndex={clickable ? 0 : undefined}
                 aria-label={
                   clickable
-                    ? `${g.label} · медиана ${numFmt.format(g.med)}${boxTarget?.label ? ` — ${boxTarget.label}` : ""}`
+                    ? `${t("ariaMedian", { label: g.label, value: numFmt.format(g.med) })}${boxTarget?.label ? ` — ${boxTarget.label}` : ""}`
                     : undefined
                 }
                 onMouseEnter={() => setHover(i)}
@@ -265,7 +268,7 @@ export function BoxplotCard({
             opacity={0.8}
           >
             {spec.valueLabel}
-            {layout.useLog ? " (лог-шкала)" : ""}
+            {layout.useLog ? t("logSuffix") : ""}
           </text>
         )}
 
@@ -279,7 +282,7 @@ export function BoxplotCard({
             fill="var(--muted)"
             opacity={0.8}
           >
-            лог-шкала
+            {t("logScale")}
           </text>
         )}
       </svg>
@@ -295,7 +298,10 @@ export function BoxplotCard({
           }}
         >
           <div className="text-sm font-semibold whitespace-nowrap">
-            {hovered.label}: медиана {numFmt.format(hovered.med)}
+            {t("tooltipMedian", {
+              label: hovered.label,
+              value: numFmt.format(hovered.med),
+            })}
           </div>
           <div className="text-xs whitespace-nowrap text-muted">
             p05 {numFmt.format(hovered.lo)} · q1 {numFmt.format(hovered.q1)} · q3{" "}
