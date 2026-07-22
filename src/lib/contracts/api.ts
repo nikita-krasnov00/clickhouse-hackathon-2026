@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { clickContextSchema } from "./click";
 import { viewKindSchema, viewSpecSchema } from "./view-spec";
+import type { AnswerLanguage } from "./language";
 
 // ---------------------------------------------------------------------------
 // Ask API — вопрос (или «почему?» с контекстом клика) → агентный ран.
@@ -150,22 +151,54 @@ export type RunStep = z.infer<typeof runStepSchema>;
 export type RunStepName = RunStep["step"];
 
 /**
- * Русские подписи шагов — справочник/фоллбек. UI берёт локализованные подписи
- * из messages/{en,ru,el}.json (неймспейс `steps`, ключи совпадают с RunStepName);
- * при добавлении шага обновить и словари.
+ * Подписи шагов для прогресса в UI (C2) — одно место правды, двуязычно.
+ * Язык рана берётся из вопроса (detectAnswerLanguage), см. language.ts:
+ * ризонинг обязан говорить на языке ответа.
  */
-export const RUN_STEP_LABELS: Record<RunStepName, string> = {
-  exploring: "Изучаю схему",
-  generating_sql: "Продумываю запросы",
-  board_planned: "План дашборда",
-  clarify: "Нужно уточнение",
-  impossible: "Данных не хватает",
-  reviewing: "Проверяю запрос",
-  executing: "Выполняю",
-  healing: "Чиню запрос",
-  materializing: "Материализую срез",
-  card_ready: "Карточка готова",
-  card_failed: "Карточка не удалась",
-  done: "Готово",
-  error: "Ошибка",
+export const RUN_STEP_LABELS_BY_LANGUAGE: Record<
+  AnswerLanguage,
+  Record<RunStepName, string>
+> = {
+  Russian: {
+    exploring: "Изучаю схему",
+    generating_sql: "Продумываю запросы",
+    board_planned: "План дашборда",
+    clarify: "Нужно уточнение",
+    impossible: "Данных не хватает",
+    reviewing: "Проверяю запрос",
+    executing: "Выполняю",
+    healing: "Чиню запрос",
+    materializing: "Материализую срез",
+    card_ready: "Карточка готова",
+    card_failed: "Карточка не удалась",
+    done: "Готово",
+    error: "Ошибка",
+  },
+  English: {
+    exploring: "Exploring schema",
+    generating_sql: "Planning queries",
+    board_planned: "Dashboard plan",
+    clarify: "Need a clarification",
+    impossible: "Not enough data",
+    reviewing: "Reviewing query",
+    executing: "Running",
+    healing: "Fixing query",
+    materializing: "Materializing slice",
+    card_ready: "Card ready",
+    card_failed: "Card failed",
+    done: "Done",
+    error: "Error",
+  },
 };
+
+/** Подпись шага на языке рана. */
+export function runStepLabel(step: RunStepName, language: AnswerLanguage): string {
+  return RUN_STEP_LABELS_BY_LANGUAGE[language][step];
+}
+
+/**
+ * Русские подписи как было — обратная совместимость для кода, который ещё не
+ * получил язык рана. Новый код должен звать runStepLabel(step, language).
+ */
+export const RUN_STEP_LABELS: Record<RunStepName, string> =
+  RUN_STEP_LABELS_BY_LANGUAGE.Russian;

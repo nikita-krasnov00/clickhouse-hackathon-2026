@@ -1,6 +1,0 @@
-2026-07-19T14:14:30Z	[10565]	CONFIG	range=[2026-06-30..2026-07-01) newest-first, target=github.github_events, state=scratch.a6_loaded_days
-2026-07-19T14:14:31Z	[10565]	MONTH	2026-06
-2026-07-19T14:14:32Z	[10565]	START	2026-06-30	attempt=1 (day-glob)
-2026-07-19T14:14:32Z	[10565]	ERR	2026-06-30	attempt=1	curl: (3) bad range specification in URL position 753: https://vjji4q3dvh.il-central-1.aws.clickhouse.cloud:8443/?default_format=TSVINSERT INTO github.github_events   (file_time, event_type, actor_login, repo_name, created_at, updated_at,    action, ref, ref_type, number, title, state, locked, author_association,    closed_at, merged_at, head_ref, base_ref, merged, merged_by,    review_comments, c
-2026-07-19T14:14:52Z	[10565]	START	2026-06-30	attempt=2 (day-glob)
-2026-07-19T14:14:52Z	[10565]	ERR	2026-06-30	attempt=2	curl: (3) bad range specification in URL position 753: https://vjji4q3dvh.il-central-1.aws.clickhouse.cloud:8443/?default_format=TSVINSERT INTO github.github_events   (file_time, event_type, actor_login, repo_name, created_at, updated_at,    action, ref, ref_type, number, title, state, locked, author_association,    closed_at, merged_at, head_ref, base_ref, merged, merged_by,    review_comments, c

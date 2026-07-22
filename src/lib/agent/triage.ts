@@ -22,6 +22,7 @@ import { viewKindSchema, type ClickContext } from "@/lib/contracts";
 import { MAX_DEEP_TABLES, type CatalogTable } from "./explore";
 import { askAndParse, extractJsonObject } from "./llm-json";
 import { chatComplete } from "./llm";
+import { languageDirective } from "./language";
 
 /** Потолок карточек одного дашборда — больше трёх углов сразу не нужно. */
 export const MAX_PLAN_CARDS = 3;
@@ -201,7 +202,10 @@ function buildTriageUserPrompt(input: TriageInput): string {
 export async function triageQuestion(input: TriageInput): Promise<TriageResult> {
   return askAndParse(
     [
-      { role: "system", content: TRIAGE_SYSTEM_PROMPT },
+      {
+        role: "system",
+        content: `${TRIAGE_SYSTEM_PROMPT}\n\n${languageDirective(input.question)}`,
+      },
       { role: "user", content: buildTriageUserPrompt(input) },
     ],
     (content) => parseTriageAnswer(content, input.catalog),

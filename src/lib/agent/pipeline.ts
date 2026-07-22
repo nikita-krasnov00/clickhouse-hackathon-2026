@@ -24,8 +24,10 @@
 import type { ClickHouseClient } from "@clickhouse/client";
 import { createReadonlyClient } from "@/lib/clickhouse";
 import {
+  detectAnswerLanguage,
   runStepSchema,
   viewSpecSchema,
+  type AnswerLanguage,
   type AskRequest,
   type ClickTarget,
   type RunStep,
@@ -587,6 +589,15 @@ function truncate(text: string, max = 300): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+/**
+ * Двуязычный выбор строки прогресса по языку рана. Ризонинг обязан говорить на
+ * языке ответа (тот же detectAnswerLanguage по тексту вопроса). Технические
+ * поля шагов (cardId, sqlPreview, имена таблиц) не переводятся.
+ */
+function pickText(language: AnswerLanguage): (ru: string, en: string) => string {
+  return (ru, en) => (language === "Russian" ? ru : en);
+}
+
 export function cardTitle(card: TriageCard): string {
   return card.title;
 }
@@ -630,12 +641,16 @@ export async function runPlannedCard(
   ctx: CardRunnerContext & { label: string },
 ): Promise<CardOutcome> {
   const { ro, emit, input, schemaContext, label } = ctx;
+  const t = pickText(detectAnswerLanguage(input.question));
 
   // SQL этой карточки пишется здесь же (на дочернем воркере) — карточки
   // одного плана генерятся и исполняются параллельно.
   await emit({
     step: "generating_sql",
-    message: `${label} — пишу SQL под карточку ${card.kind}`,
+    message: t(
+      `${label} — пишу SQL под карточку ${card.kind}`,
+      `${label} — writing SQL for the ${card.kind} card`,
+    ),
   });
   let generated: GeneratedSql;
   try {
@@ -646,7 +661,10 @@ export async function runPlannedCard(
       card: { kind: card.kind, title: card.title, ...(card.hint ? { hint: card.hint } : {}) },
     });
   } catch (err) {
-    const error = `${label}: не удалось сгенерировать SQL — ${truncate(errorMessage(err))}`;
+    const error = t(
+      `${label}: не удалось сгенерировать SQL — ${truncate(errorMessage(err))}`,
+      `${label}: failed to generate SQL — ${truncate(errorMessage(err))}`,
+    );
     await emit({ step: "card_failed", cardId: card.cardId, error, message: error });
     return { ok: false, error, attempts: 0 };
   }
@@ -659,7 +677,10 @@ export async function runPlannedCard(
       message:
         attempt === 1
           ? label
-          : `${label} — попытка ${attempt} из ${MAX_SQL_ATTEMPTS}`,
+          : t(
+              `${label} — попытка ${attempt} из ${MAX_SQL_ATTEMPTS}`,
+              `${label} — attempt ${attempt} of ${MAX_SQL_ATTEMPTS}`,
+            ),
     });
     try {
       // Санитайз (только SELECT, один стейтмент) — страховка поверх agent_ro;
@@ -705,7 +726,10 @@ export async function runPlannedCard(
         cardId: card.cardId,
         viewSpec,
         sql,
-        message: `${label}: ${rows.length} строк → карточка ${viewSpec.kind}`,
+        message: t(
+          `${label}: ${rows.length} строк → карточка ${viewSpec.kind}`,
+          `${label}: ${rows.length} rows → ${viewSpec.kind} card`,
+        ),
       });
       return { ok: true, spec: viewSpec, sql, attempts: attempt };
     } catch (err) {
@@ -718,7 +742,10 @@ export async function runPlannedCard(
           step: "healing",
           attempt,
           error: lastError,
-          message: `${label} — отдаю ошибку модели на починку`,
+          message: t(
+            `${label} — отдаю ошибку модели на починку`,
+            `${label} — handing the error back to the model to fix`,
+          ),
         });
         try {
           generated = await healSql({
@@ -738,9 +765,12 @@ export async function runPlannedCard(
   }
 
   const summary = attemptErrors
-    .map((e, i) => `Попытка ${i + 1}: ${truncate(e)}`)
+    .map((e, i) => t(`Попытка ${i + 1}: ${truncate(e)}`, `Attempt ${i + 1}: ${truncate(e)}`))
     .join(" | ");
-  const error = `${label}: SQL не удался после ${MAX_SQL_ATTEMPTS} попыток. ${summary}`;
+  const error = t(
+    `${label}: SQL не удался после ${MAX_SQL_ATTEMPTS} попыток. ${summary}`,
+    `${label}: SQL failed after ${MAX_SQL_ATTEMPTS} attempts. ${summary}`,
+  );
   await emit({ step: "card_failed", cardId: card.cardId, error: truncate(error, 600) });
   return { ok: false, error, attempts: MAX_SQL_ATTEMPTS };
 }
@@ -766,20 +796,27 @@ export async function runInvestigatePipeline(
 
   const ro = options.readonlyClient ?? createReadonlyClient();
   const ownsClients = !options.readonlyClient;
+  const t = pickText(detectAnswerLanguage(input.question));
   let errorEmitted = false;
 
   try {
     // -- фаза A: каталог всех видимых таблиц (дёшево) -------------------------
     await emit({
       step: "exploring",
-      message: "Смотрю каталог таблиц (system.tables/columns)",
+      message: t(
+        "Смотрю каталог таблиц (system.tables/columns)",
+        "Reading the table catalog (system.tables/columns)",
+      ),
     });
     const catalog = await getCatalog(ro);
 
     // -- триаж на быстрой модели ---------------------------------------------
     await emit({
       step: "generating_sql",
-      message: "Триаж: понимаю вопрос, выбираю таблицы и карточки",
+      message: t(
+        "Триаж: понимаю вопрос, выбираю таблицы и карточки",
+        "Triage: understanding the question, picking tables and cards",
+      ),
     });
     const triage = await (options.triageImpl ?? triageQuestion)({
       question: input.question,
@@ -793,12 +830,18 @@ export async function runInvestigatePipeline(
         step: "clarify",
         question: triage.question,
         ...(triage.options ? { options: triage.options } : {}),
-        message: `Нужно уточнение: ${triage.question}`,
+        message: t(
+          `Нужно уточнение: ${triage.question}`,
+          `Need a clarification: ${triage.question}`,
+        ),
       });
       await emit({
         step: "done",
         viewSpecs: [],
-        message: "Жду уточнения — задайте вопрос ещё раз с ответом",
+        message: t(
+          "Жду уточнения — задайте вопрос ещё раз с ответом",
+          "Waiting for your clarification — ask again with the answer",
+        ),
       });
       return { viewSpecs: [], sql: "", attempts: 0 };
     }
@@ -807,12 +850,18 @@ export async function runInvestigatePipeline(
         step: "impossible",
         reason: triage.reason,
         ...(triage.available ? { available: triage.available } : {}),
-        message: `По имеющимся данным ответить нельзя: ${truncate(triage.reason, 200)}`,
+        message: t(
+          `По имеющимся данным ответить нельзя: ${truncate(triage.reason, 200)}`,
+          `The available data can't answer this: ${truncate(triage.reason, 200)}`,
+        ),
       });
       await emit({
         step: "done",
         viewSpecs: [],
-        message: "Данных под вопрос нет — см. подсказки, о чём спросить",
+        message: t(
+          "Данных под вопрос нет — см. подсказки, о чём спросить",
+          "No data for this question — see the hints on what to ask",
+        ),
       });
       return { viewSpecs: [], sql: "", attempts: 0 };
     }
@@ -824,14 +873,20 @@ export async function runInvestigatePipeline(
       cards: cards.map(({ cardId, kind, title }) => ({ cardId, kind, title })),
       message:
         cards.length === 1
-          ? `Одна карточка: «${cards[0].title}»`
-          : `Карточек: ${cards.length} — ${cards.map((c) => `«${c.title}»`).join(", ")}`,
+          ? t(`Одна карточка: «${cards[0].title}»`, `One card: “${cards[0].title}”`)
+          : t(
+              `Карточек: ${cards.length} — ${cards.map((c) => `«${c.title}»`).join(", ")}`,
+              `${cards.length} cards — ${cards.map((c) => `“${c.title}”`).join(", ")}`,
+            ),
     });
 
     // -- фаза B: глубокая разведка только выбранных таблиц --------------------
     await emit({
       step: "exploring",
-      message: `Глубокая разведка: ${triage.tables.join(", ")}`,
+      message: t(
+        `Глубокая разведка: ${triage.tables.join(", ")}`,
+        `Deep exploration: ${triage.tables.join(", ")}`,
+      ),
     });
     const schemaContext = await exploreTables(ro, triage.tables);
 
@@ -870,10 +925,18 @@ export async function runInvestigatePipeline(
       viewSpecs,
       message:
         failed.length === 0
-          ? `${viewSpecs.length} ${viewSpecs.length === 1 ? "карточка" : "карточек"} готово`
-          : `${viewSpecs.length} из ${viewSpecs.length + failed.length} карточек готово; не удалось: ${failed
-              .map((f) => truncate(f.error, 160))
-              .join(" | ")}`,
+          ? t(
+              `${viewSpecs.length} ${viewSpecs.length === 1 ? "карточка" : "карточек"} готово`,
+              `${viewSpecs.length} ${viewSpecs.length === 1 ? "card" : "cards"} ready`,
+            )
+          : t(
+              `${viewSpecs.length} из ${viewSpecs.length + failed.length} карточек готово; не удалось: ${failed
+                .map((f) => truncate(f.error, 160))
+                .join(" | ")}`,
+              `${viewSpecs.length} of ${viewSpecs.length + failed.length} cards ready; failed: ${failed
+                .map((f) => truncate(f.error, 160))
+                .join(" | ")}`,
+            ),
     });
     return { viewSpecs, sql, attempts };
   } catch (err) {

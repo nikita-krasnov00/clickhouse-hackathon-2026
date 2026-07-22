@@ -11,8 +11,7 @@
  * reviewing / card_ready несут sqlPreview|sql — под шагом раскрывающийся
  * моноширинный блок; board_planned перечисляет запланированные карточки.
  */
-import { useTranslations } from "next-intl";
-import type { RunStep } from "@/lib/contracts";
+import { runStepLabel, type AnswerLanguage, type RunStep } from "@/lib/contracts";
 import type { InvestigationPhase } from "@/lib/hooks/useInvestigationRun";
 
 function Spinner() {
@@ -96,10 +95,16 @@ function StepSql({ sql, open }: { sql: string; open?: boolean }) {
   );
 }
 
-function StepRow({ step, isActive }: { step: RunStep; isActive: boolean }) {
-  const tSteps = useTranslations("steps");
-  const tRun = useTranslations("run");
-  const label = tSteps(step.step);
+function StepRow({
+  step,
+  isActive,
+  language,
+}: {
+  step: RunStep;
+  isActive: boolean;
+  language: AnswerLanguage;
+}) {
+  const label = runStepLabel(step.step, language);
   const isHealing = step.step === "healing";
   const isError = step.step === "error";
   // Сэмпл SQL шага: executing/reviewing несут sqlPreview, card_ready — sql.
@@ -135,7 +140,7 @@ function StepRow({ step, isActive }: { step: RunStep; isActive: boolean }) {
                 color: "var(--viz-warning)",
               }}
             >
-              {tRun("attempt", { attempt: step.attempt })}
+              {language === "Russian" ? "попытка" : "attempt"} {step.attempt}/3
             </span>
           )}
           {step.step === "materializing" && step.table && (
@@ -185,11 +190,12 @@ function StepRow({ step, isActive }: { step: RunStep; isActive: boolean }) {
 export function RunProgress({
   steps,
   phase,
+  language,
 }: {
   steps: RunStep[];
   phase: InvestigationPhase;
+  language: AnswerLanguage;
 }) {
-  const t = useTranslations("run");
   const isLive = phase === "connecting" || phase === "running";
 
   return (
@@ -198,7 +204,7 @@ export function RunProgress({
         <li className="flex items-center gap-2 text-xs text-muted">
           <Spinner />
           <span>
-            {t("startingPipeline")}
+            {language === "Russian" ? "Запускаю конвейер" : "Starting the pipeline"}
             <ThinkingDots />
           </span>
         </li>
@@ -208,6 +214,7 @@ export function RunProgress({
           key={i}
           step={step}
           isActive={isLive && i === steps.length - 1}
+          language={language}
         />
       ))}
     </ol>

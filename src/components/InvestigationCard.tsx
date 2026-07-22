@@ -18,8 +18,12 @@
  *
  * Если /api/ask вернул ошибку (runId нет) — карточка сразу в failed.
  */
-import { useTranslations } from "next-intl";
-import type { RunStep, ViewSpec } from "@/lib/contracts";
+import {
+  detectAnswerLanguage,
+  type AnswerLanguage,
+  type RunStep,
+  type ViewSpec,
+} from "@/lib/contracts";
 import { useElapsedSeconds } from "@/lib/hooks/useElapsedSeconds";
 import {
   useInvestigationRun,
@@ -46,7 +50,7 @@ export type Investigation = {
   askError?: string;
 };
 
-/** Стили бейджа фазы; подписи — в messages (run.connecting и т.д.). */
+/** Стиль бейджа фазы — от языка не зависит. */
 const PHASE_BADGE: Record<
   InvestigationRunState["phase"],
   { className: string; style?: React.CSSProperties }
@@ -54,9 +58,22 @@ const PHASE_BADGE: Record<
   connecting: { className: "border-border text-muted" },
   running: { className: "animate-pulse border-accent/60 text-accent" },
   done: { className: "border-border", style: { color: "var(--viz-good)" } },
-  failed: {
-    className: "border-border",
-    style: { color: "var(--viz-critical)" },
+  failed: { className: "border-border", style: { color: "var(--viz-critical)" } },
+};
+
+/** Подпись бейджа фазы на языке рана. */
+const PHASE_LABEL: Record<AnswerLanguage, Record<InvestigationRunState["phase"], string>> = {
+  Russian: {
+    connecting: "запускаю",
+    running: "расследую",
+    done: "готово",
+    failed: "не смог",
+  },
+  English: {
+    connecting: "starting",
+    running: "investigating",
+    done: "done",
+    failed: "failed",
   },
 };
 
@@ -64,11 +81,13 @@ const PHASE_BADGE: Record<
 export function FailedFallback({
   state,
   askError,
+  language,
 }: {
   state: InvestigationRunState;
   askError?: string;
+  language: AnswerLanguage;
 }) {
-  const t = useTranslations("run");
+  const ru = language === "Russian";
   const healingSteps = state.steps.filter((s) => s.step === "healing");
   return (
     <div
@@ -76,17 +95,19 @@ export function FailedFallback({
       style={{ borderColor: "var(--viz-anomaly-edge)" }}
     >
       <p className="text-sm font-medium" style={{ color: "var(--viz-critical)" }}>
-        {t("failedTitle")}
+        {ru ? "Не смог довести расследование" : "Couldn't finish the investigation"}
       </p>
       <p className="mt-1 text-xs leading-relaxed text-muted">
-        {askError ?? state.errorMessage ?? t("failedDefault")}
+        {askError ??
+          state.errorMessage ??
+          (ru ? "Ран завершился неудачей." : "The run failed.")}
       </p>
       {healingSteps.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1">
           {healingSteps.map((s, i) => (
             <li key={i} className="font-mono text-[10px] leading-relaxed text-muted">
               <span style={{ color: "var(--viz-warning)" }}>
-                {t("attempt", { attempt: s.attempt })}
+                {ru ? "попытка" : "attempt"} {s.attempt}/3
               </span>
               {s.error ? ` — ${s.error.length > 200 ? `${s.error.slice(0, 200)}…` : s.error}` : ""}
             </li>
@@ -107,9 +128,12 @@ export function InvestigationCard({
   /** C2: клик по чипу clarify/impossible — новый ран тем же submit-флоу Workbench. */
   onAsk?: (question: string) => void;
 }) {
-  const t = useTranslations("run");
   const { id, question, askedAt, runId, publicAccessToken, askError } = investigation;
   const state = useInvestigationRun(runId, publicAccessToken);
+
+  // Язык рана — по тексту вопроса, тот же сигнал, что управляет ответом.
+  // Ризонинг (лента, бейджи, обёртки) говорит на языке ответа.
+  const language = detectAnswerLanguage(question);
 
   // Ошибка /api/ask — рана нет, карточка сразу терминальная.
   const phase = askError ? "failed" : state.phase;
@@ -139,7 +163,8 @@ export function InvestigationCard({
           className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] ${badge.className}`}
           style={badge.style}
         >
-          {t(phase)} · {t("elapsed", { seconds: elapsed })}
+          {PHASE_LABEL[language][phase]} · {elapsed}
+          {language === "Russian" ? " с" : "s"}
         </span>
       </header>
       {runId && (
@@ -152,28 +177,37 @@ export function InvestigationCard({
       {/* Прогресс конвейера: живой — развёрнут; done — свёрнут в details. */}
       {!askError && phase !== "done" && (
         <div className="mt-3">
-          <RunProgress steps={state.steps} phase={phase} />
+          <RunProgress steps={state.steps} phase={phase} language={language} />
         </div>
       )}
       {!askError && phase === "done" && (
         <details className="mt-2">
           <summary className="cursor-pointer text-[11px] text-muted select-none hover:text-foreground">
-            {t("howIDidIt", { count: state.steps.length, seconds: elapsed })}
+            {language === "Russian" ? "Как я это делал" : "How I did it"} —{" "}
+            {state.steps.length} {stepsNoun(state.steps.length, language)} · {elapsed}
+            {language === "Russian" ? " с" : "s"}
           </summary>
           <div className="mt-2">
-            <RunProgress steps={state.steps} phase={phase} />
+            <RunProgress steps={state.steps} phase={phase} language={language} />
           </div>
         </details>
       )}
 
-      {phase === "failed" && <FailedFallback state={state} askError={askError} />}
+      {phase === "failed" && (
+        <FailedFallback state={state} askError={askError} language={language} />
+      )}
 
       {/* clarify/impossible — ранние терминальные исходы, до board_planned. */}
       {!askError && clarifyStep && (
-        <ClarifyCard step={clarifyStep} originalQuestion={question} onAsk={onAsk} />
+        <ClarifyCard
+          step={clarifyStep}
+          originalQuestion={question}
+          onAsk={onAsk}
+          language={language}
+        />
       )}
       {!askError && !clarifyStep && impossibleStep && (
-        <ImpossibleCard step={impossibleStep} onAsk={onAsk} />
+        <ImpossibleCard step={impossibleStep} onAsk={onAsk} language={language} />
       )}
 
       {/* Манифест есть — сетка скелетов/карточек на его местах (C2). */}
@@ -201,4 +235,13 @@ export function InvestigationCard({
         )}
     </article>
   );
+}
+
+function stepsNoun(n: number, language: AnswerLanguage): string {
+  if (language === "English") return n === 1 ? "step" : "steps";
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "шаг";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "шага";
+  return "шагов";
 }

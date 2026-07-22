@@ -10,33 +10,36 @@
  * тот же путь, что и у чипов-примеров в композере) — available это уже готовые
  * вопросы, а не уточнение, поэтому текст уходит как есть, без склейки.
  */
-import { useTranslations } from "next-intl";
-import type { RunStep } from "@/lib/contracts";
+import { runStepLabel, type AnswerLanguage, type RunStep } from "@/lib/contracts";
 
 type ImpossibleStep = Extract<RunStep, { step: "impossible" }>;
 
 export function ImpossibleCard({
   step,
   onAsk,
+  language,
 }: {
   step: ImpossibleStep;
   onAsk?: (question: string) => void;
+  language: AnswerLanguage;
 }) {
-  const t = useTranslations("impossible");
-  const tSteps = useTranslations("steps");
   return (
     <div
       className="mt-3 rounded-lg border border-dashed p-3"
       style={{ borderColor: "var(--viz-anomaly-edge)" }}
     >
       <p className="text-xs font-medium tracking-wide uppercase" style={{ color: "var(--viz-warning)" }}>
-        {tSteps("impossible")}
+        {runStepLabel("impossible", language)}
       </p>
       <p className="mt-1 text-sm leading-relaxed font-medium">{step.reason}</p>
 
       {step.available && step.available.length > 0 && (
         <>
-          <p className="mt-2.5 text-xs text-muted">{t("available")}</p>
+          <p className="mt-2.5 text-xs text-muted">
+            {language === "Russian"
+              ? "А вот что по этим данным спросить можно:"
+              : "But here's what you can ask about this data:"}
+          </p>
           <div className="mt-1.5 flex flex-wrap gap-2">
             {step.available.map((q) => (
               <button
