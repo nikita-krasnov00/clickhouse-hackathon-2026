@@ -48,6 +48,17 @@ const llmEnvSchema = z.object({
   LLM_MODEL_FAST: optionalVar,
 });
 
+/** Вход на фронтенд: Google OAuth через NextAuth (src/auth.ts). */
+const authEnvSchema = z.object({
+  /** Подпись/шифрование сессионных cookie: openssl rand -base64 32. */
+  AUTH_SECRET: nonEmpty,
+  /** OAuth client (Web) из Google Cloud Console → Credentials. */
+  AUTH_GOOGLE_ID: nonEmpty,
+  AUTH_GOOGLE_SECRET: nonEmpty,
+  /** Кому разрешён вход: email через запятую. Пусто — любой Google-аккаунт. */
+  AUTH_ALLOWED_EMAILS: optionalVar,
+});
+
 // ---------------------------------------------------------------------------
 // Типы наружу
 // ---------------------------------------------------------------------------
@@ -65,6 +76,14 @@ export type LlmConfig = {
   model: string | undefined;
   /** Быстрая модель из env; undefined — дефолт llm.ts (GPT-5.6 Terra). */
   fastModel: string | undefined;
+};
+
+export type AuthConfig = {
+  secret: string;
+  googleId: string;
+  googleSecret: string;
+  /** Нормализованный allowlist (lowercase); пустой — вход любому аккаунту. */
+  allowedEmails: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -89,6 +108,7 @@ function parseGroup<S extends z.ZodRawShape>(
 
 let clickhouseCache: ClickHouseConfig | undefined;
 let llmCache: LlmConfig | undefined;
+let authCache: AuthConfig | undefined;
 
 export const config = {
   get clickhouse(): ClickHouseConfig {
@@ -121,5 +141,21 @@ export const config = {
       };
     }
     return llmCache;
+  },
+
+  get auth(): AuthConfig {
+    if (!authCache) {
+      const env = parseGroup("Auth", authEnvSchema);
+      authCache = {
+        secret: env.AUTH_SECRET,
+        googleId: env.AUTH_GOOGLE_ID,
+        googleSecret: env.AUTH_GOOGLE_SECRET,
+        allowedEmails: (env.AUTH_ALLOWED_EMAILS ?? "")
+          .split(",")
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean),
+      };
+    }
+    return authCache;
   },
 };

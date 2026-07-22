@@ -31,10 +31,12 @@ push() {
   echo "· $name: задано"
 }
 
-# Группы из src/lib/config.ts: ClickHouse (агентские юзеры) + LLM.
+# Группы из src/lib/config.ts: ClickHouse (агентские юзеры) + LLM + Auth
+# (Google OAuth: AUTH_ALLOWED_EMAILS пустой — пропуск, вход любому аккаунту).
 for name in CLICKHOUSE_URL AGENT_RO_USER AGENT_RO_PASSWORD \
             AGENT_SCRATCH_USER AGENT_SCRATCH_PASSWORD \
-            OPENROUTER_API_KEY LLM_MODEL LLM_MODEL_FAST; do
+            OPENROUTER_API_KEY LLM_MODEL LLM_MODEL_FAST \
+            AUTH_SECRET AUTH_GOOGLE_ID AUTH_GOOGLE_SECRET AUTH_ALLOWED_EMAILS; do
   push "$name" "$(env_get "$name")"
 done
 

@@ -53,6 +53,25 @@ Project ref захардкожен в `trigger.config.ts` (канон Trigger.de
 подхватывается из `.env` и в конфиг не пишется. Свой проект — замените `project` в
 `trigger.config.ts` (дашборд → Project settings → Project ref).
 
+### Google OAuth (вход на фронтенд)
+
+Весь интерфейс и API (кроме `/login` и `/api/auth/*`) закрыты входом через Google
+(NextAuth v5, JWT-сессии — базы не нужно). Настройка:
+
+1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) →
+   APIs & Services → Credentials → **Create credentials → OAuth client ID** →
+   тип **Web application** (если спросит — сначала настроить Consent screen:
+   тип External, добавить себя в Test users, пока приложение не опубликовано).
+2. **Authorized redirect URIs**: `http://localhost:3000/api/auth/callback/google`
+   и `https://<прод-домен>/api/auth/callback/google`.
+3. В `.env`: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` из созданного клиента,
+   `AUTH_SECRET` — `openssl rand -base64 32`.
+4. `AUTH_ALLOWED_EMAILS` — необязательный allowlist через запятую; пустой —
+   вход любому Google-аккаунту (режим для жюри: ссылка публичная, но
+   анонимного доступа к агенту нет).
+
+На Vercel переменные заливает `npm run vercel:env` (шаг деплоя ниже).
+
 ### Деплой (выполняется вручную, не из CI)
 
 **Trigger.dev cloud** — деплой тасок:
@@ -75,16 +94,19 @@ TRIGGER_SECRET_KEY_PROD=tr_prod_… npm run vercel:env   # залить env из
 npx vercel deploy --prod
 ```
 
-`vercel:env` (scripts/vercel-env-push.sh) заливает переменные ClickHouse + LLM из
-`.env`; `TRIGGER_SECRET_KEY_PROD` — **prod**-ключ Trigger.dev (`tr_prod_…`, дашборд →
-API Keys), передаётся отдельно, чтобы dev-ключ из `.env` не попал в прод.
+`vercel:env` (scripts/vercel-env-push.sh) заливает переменные ClickHouse + LLM +
+Auth (Google OAuth) из `.env`; `TRIGGER_SECRET_KEY_PROD` — **prod**-ключ Trigger.dev
+(`tr_prod_…`, дашборд → API Keys), передаётся отдельно, чтобы dev-ключ из `.env`
+не попал в прод. Не забудьте прод-домен в Authorized redirect URIs OAuth-клиента
+(раздел «Google OAuth» выше).
 
 После деплоя проверить публичную ссылку со свежего устройства (задача J4).
 
 ### Структура
 
 ```
-src/app/            # Next.js App Router: страница рабочего места (лента + композер), API-роуты /api/ask и /api/suggest
+src/app/            # Next.js App Router: страница рабочего места (лента + композер), /login, API-роуты /api/ask, /api/suggest, /api/auth/*
+src/auth.ts         # NextAuth v5: Google OAuth, JWT-сессии, allowlist; гейт на всё приложение — src/proxy.ts
 src/trigger/        # Таски Trigger.dev v4: hello — смоук; investigate — конвейер; investigate-card — дочерний ран одной карточки; explore-schema — разведка вручную
 src/lib/agent/      # Конвейер investigate v2: explore (каталог+разведка) → triage (быстрая модель, env LLM_MODEL_FAST) → generate-sql (LLM_MODEL)
 src/lib/clickhouse.ts   # Фабрики клиентов: readonly (agent_ro) и scratch (agent_scratch)
