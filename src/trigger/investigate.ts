@@ -11,27 +11,27 @@ import {
 import { investigateCardTask } from "./investigate-card";
 
 /**
- * B3 — durable-таска investigate: вопрос (+ опциональный ClickContext из клика
- * «почему?») → конвейер v2: каталог → триаж (clarify/impossible/board_planned)
- * → глубокая разведка выбранных таблиц → карточки → done с ViewSpec[].
+ * B3 — durable investigate task: question (+ optional ClickContext from a
+ * "why?" click) → v2 pipeline: catalog → triage (clarify/impossible/board_planned)
+ * → deep reconnaissance of selected tables → cards → done with ViewSpec[].
  *
- * Карточки плана исполняются ПАРАЛЛЕЛЬНЫМИ ДОЧЕРНИМИ РАНАМИ investigate-card
- * (batch.triggerByTaskAndWait — настоящий параллелизм на воркерах), а не
- * Promise.all в этом ране; каждый ребёнок сам генерит SQL своей карточки.
- * Прогресс детей виден фронту без изменений контракта: каждый ребёнок пишет
- * свои шаги в metadata ЭТОГО рана через metadata.parent.append.
+ * Plan cards run in PARALLEL CHILD investigate-card RUNS
+ * (batch.triggerByTaskAndWait — real worker parallelism), not Promise.all
+ * in this run; each child generates SQL for its own card.
+ * Child progress is visible to the frontend without contract changes: each
+ * child writes its steps to THIS run's metadata via metadata.parent.append.
  *
- * Прогресс стримится через metadata (Trigger.dev Realtime):
- *   - metadata.steps — массив всех RunStep рана по порядку (строго runStepSchema);
- *   - metadata.lastStep — последний шаг (удобно для индикатора C2).
- * Фронт подписывается на ран (useRealtimeRun / runs.subscribeToRun, токен выдаёт
- * /api/ask — B7) и читает run.metadata; финальные viewSpecs приходят прямо в
- * шаге done — отдельный fetch результата не нужен.
+ * Progress streams via metadata (Trigger.dev Realtime):
+ *   - metadata.steps — ordered array of all RunStep values (strict runStepSchema);
+ *   - metadata.lastStep — latest step (handy for the C2 indicator).
+ * The frontend subscribes to the run (useRealtimeRun / runs.subscribeToRun,
+ * token from /api/ask — B7) and reads run.metadata; final viewSpecs arrive
+ * directly in the done step — no separate result fetch needed.
  *
- * Вход совместим с askRequestSchema — /api/ask (B7) прокидывает тело как есть.
- * Ретраи на уровне тасок выключены: самопочинка (до 3 попыток) живёт внутри
- * конвейера, а терминальный шаг error должен показаться пользователю один раз.
- * Падение/таймаут ребёнка НЕ роняет родителя — это CardOutcome {ok:false}.
+ * Input is compatible with askRequestSchema — /api/ask (B7) forwards the
+ * body as-is. Task-level retries are off: self-healing (up to 3 attempts)
+ * lives inside the pipeline, and the terminal error step must be shown once.
+ * A child failure/timeout does NOT crash the parent — it becomes CardOutcome {ok:false}.
  */
 
 function childErrorMessage(err: unknown): string {
@@ -43,8 +43,8 @@ function childErrorMessage(err: unknown): string {
 }
 
 /**
- * Исполнитель карточек на дочерних ранах. Если сам batch не удался (например,
- * недоступен API) — фоллбек на in-process исполнение, чтобы ран выжил.
+ * Card runner on child runs. If the batch itself fails (e.g. API unavailable),
+ * fall back to in-process execution so the parent run survives.
  */
 const runCardsInChildRuns: CardRunner = async (cards, ctx) => {
   if (cards.length === 0) return [];
@@ -64,7 +64,7 @@ const runCardsInChildRuns: CardRunner = async (cards, ctx) => {
     );
     return runs.map((run, i): CardOutcome => {
       if (!run.ok) {
-        // Ребёнок упал/зависший таймаут — карточка не удалась, родитель живёт.
+        // Child crashed/timed out — card failed, parent survives.
         return {
           ok: false,
           error: `${cardLabel(cards[i], many)}: дочерний ран ${run.id} не завершился — ${childErrorMessage(run.error)}`,
@@ -72,7 +72,7 @@ const runCardsInChildRuns: CardRunner = async (cards, ctx) => {
         };
       }
       const out = run.output;
-      // Контрольная валидация ViewSpec после сериализации через Trigger API.
+      // Sanity-check ViewSpec after serialization through the Trigger API.
       return out.ok
         ? {
             ok: true,
@@ -83,7 +83,7 @@ const runCardsInChildRuns: CardRunner = async (cards, ctx) => {
         : { ok: false, error: out.error, attempts: out.attempts };
     });
   } catch (err) {
-    logger.error("investigate: batch дочерних ранов не удался — фоллбек in-process", {
+    logger.error("investigate: child-run batch failed — falling back to in-process", {
       error: childErrorMessage(err),
       cards: cards.map((c) => cardTitle(c)),
     });
@@ -97,7 +97,7 @@ export const investigateTask = schemaTask({
   maxDuration: 300,
   retry: { maxAttempts: 1 },
   run: async (payload) => {
-    logger.info("investigate: старт", {
+    logger.info("investigate: start", {
       question: payload.question,
       hasClickContext: Boolean(payload.context),
     });
@@ -112,7 +112,7 @@ export const investigateTask = schemaTask({
       cardRunner: runCardsInChildRuns,
     });
 
-    logger.info("investigate: готово", {
+    logger.info("investigate: done", {
       attempts: result.attempts,
       viewSpecKinds: result.viewSpecs.map((v) => v.kind),
     });

@@ -1,14 +1,13 @@
 "use client";
 
 /**
- * ClarifyCard (C2) — терминальный шаг clarify: агенту не хватило вводных.
+ * ClarifyCard (C2) — terminal clarify step: the agent lacked input.
  *
- * Показывает вопрос агента, чипы options (если есть) и поле свободного
- * ответа. Выбор чипа или сабмит поля запускают НОВЫЙ ран через тот же
- * submit-флоу Workbench (проп onAsk, прокинутый из Workbench в
- * InvestigationCard) — итоговый текст:
- *   `${исходный вопрос}\n\nУточнение: ${ответ}`
- * без ClickContext — это обычный вопрос, не клик по элементу карточки.
+ * Shows the agent's question, option chips (if any), and a free-text answer field.
+ * Choosing a chip or submitting the field starts a NEW run via the same Workbench
+ * submit flow (onAsk prop forwarded from Workbench to InvestigationCard) — final text:
+ *   `${original question}\n\nClarification: ${answer}`
+ * without ClickContext — this is a plain question, not a card element click.
  */
 import { useState } from "react";
 import { runStepLabel, type AnswerLanguage, type RunStep } from "@/lib/contracts";
@@ -22,7 +21,7 @@ export function ClarifyCard({
   language,
 }: {
   step: ClarifyStep;
-  /** Вопрос расследования, к которому агент просит уточнение. */
+  /** Investigation question the agent is asking to clarify. */
   originalQuestion: string;
   onAsk?: (question: string) => void;
   language: AnswerLanguage;

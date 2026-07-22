@@ -1,21 +1,21 @@
 /**
- * Операционный лог LLM-вызовов в ClickHouse: каждый запрос к OpenRouter
- * (включая ретраи и фоллбеки моделей) — строка в scratch.llm_log с полным
- * промптом, ответом, статусом и таймингом. Единственная точка записи —
- * chatComplete (llm.ts), поэтому в лог попадают ВСЕ вызовы: план дашборда,
- * самопочинка SQL, вердикты.
+ * Operational log of LLM calls in ClickHouse: every OpenRouter request
+ * (including retries and model fallbacks) — one row in scratch.llm_log with the
+ * full prompt, response, status, and timing. Single write point — chatComplete
+ * (llm.ts) — so ALL calls land in the log: dashboard plan, SQL self-healing,
+ * verdicts.
  *
- * Схема — по правилам clickhouse-best-practices:
- *   - ORDER BY (purpose, ts): низкая кардинальность вперёд
+ * Schema follows clickhouse-best-practices rules:
+ *   - ORDER BY (purpose, ts): low cardinality first
  *     (schema-pk-cardinality-order);
- *   - LowCardinality для purpose/model/status (schema-types-lowcardinality);
- *   - без Nullable — DEFAULT '' (schema-types-avoid-nullable);
- *   - одиночные вставки идут через async_insert, батчит сервер
+ *   - LowCardinality for purpose/model/status (schema-types-lowcardinality);
+ *   - no Nullable — DEFAULT '' (schema-types-avoid-nullable);
+ *   - single inserts go through async_insert, server batches
  *     (insert-async-small-batches);
- *   - без партиционирования (schema-partition-start-without), лайфцикл — TTL.
+ *   - no partitioning (schema-partition-start-without), lifecycle — TTL.
  *
- * Логирование не имеет права ломать конвейер: любая ошибка ClickHouse здесь
- * гасится с одним console.warn на процесс.
+ * Logging must not break the pipeline: any ClickHouse error here is swallowed
+ * with one console.warn per process.
  */
 import type { ClickHouseClient } from "@clickhouse/client";
 import { createScratchClient } from "@/lib/clickhouse";
@@ -23,22 +23,22 @@ import type { ChatMessage } from "./llm";
 
 export const LLM_LOG_TABLE = "scratch.llm_log";
 
-/** Капы на размер: промпт с контекстом схемы — килобайты, но не мегабайты. */
+/** Size caps: prompt with schema context — kilobytes, not megabytes. */
 const MAX_REQUEST_CHARS = 200_000;
 const MAX_RESPONSE_CHARS = 100_000;
 
 export type LlmLogEntry = {
-  /** Назначение вызова: generate_plan | heal_sql | verdict_summary (+ :reparse). */
+  /** Call purpose: generate_plan | heal_sql | verdict_summary (+ :reparse). */
   purpose: string;
   model: string;
-  /** Номер попытки внутри chatComplete (ретраи транспорта/модели). */
+  /** Attempt number within chatComplete (transport/model retries). */
   attempt: number;
   status: "ok" | "error";
-  /** Причина неудачи попытки (HTTP-статус, таймаут, пустой content…). */
+  /** Failure reason for the attempt (HTTP status, timeout, empty content…). */
   error?: string;
-  /** Полный диалог, ушедший в модель. */
+  /** Full dialog sent to the model. */
   messages: ChatMessage[];
-  /** Сырой content ответа модели (для status=ok). */
+  /** Raw model response content (for status=ok). */
   response?: string;
   elapsedMs: number;
 };
@@ -62,7 +62,7 @@ const CREATE_LLM_LOG_SQL = `
   TTL toDateTime(\`ts\`) + INTERVAL 30 DAY
 `;
 
-/** Ленивые синглтоны на процесс: клиент и однократный CREATE TABLE. */
+/** Lazy per-process singletons: client and one-time CREATE TABLE. */
 let logClient: ClickHouseClient | undefined;
 let ensureTablePromise: Promise<void> | undefined;
 let warned = false;
@@ -80,12 +80,12 @@ function ensureTable(): Promise<void> {
 }
 
 function cap(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}…[обрезано]` : text;
+  return text.length > max ? `${text.slice(0, max)}…[truncated]` : text;
 }
 
 /**
- * Пишет один вызов LLM в лог. Никогда не кидает: сбой логирования — один
- * console.warn на процесс, конвейер продолжает работать.
+ * Write one LLM call to the log. Never throws: logging failure — one
+ * console.warn per process, pipeline continues.
  */
 export async function logLlmCall(entry: LlmLogEntry): Promise<void> {
   try {
@@ -110,8 +110,8 @@ export async function logLlmCall(entry: LlmLogEntry): Promise<void> {
       ],
       format: "JSONEachRow",
       clickhouse_settings: {
-        // Одиночные строки батчит сервер (insert-async-small-batches);
-        // wait=0 — вставка подтверждается буфером, вызов не тормозит конвейер.
+        // Server batches single rows (insert-async-small-batches);
+        // wait=0 — insert confirmed from buffer, call does not block the pipeline.
         async_insert: 1,
         wait_for_async_insert: 0,
       },
@@ -120,12 +120,12 @@ export async function logLlmCall(entry: LlmLogEntry): Promise<void> {
     if (!warned) {
       warned = true;
       console.warn(
-        `[llm-log] запись в ${LLM_LOG_TABLE} не удалась (дальше молчу): ${
+        `[llm-log] write to ${LLM_LOG_TABLE} failed (silencing further warnings): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
     }
-    // При сбое DDL даём следующему вызову шанс пересоздать промис.
+    // On DDL failure, let the next call retry creating the promise.
     ensureTablePromise = undefined;
   }
 }

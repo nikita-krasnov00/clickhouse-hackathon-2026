@@ -1,27 +1,27 @@
 "use client";
 
 /**
- * Map — гео-точки {lat, lon, value?, label?} на SVG-карте С ПОДЛОЖКОЙ.
+ * Map — geo points {lat, lon, value?, label?} on an SVG map WITH BASEMAP.
  *
- * Подложка — растровые тайлы CARTO dark_matter (© OpenStreetMap © CARTO):
- * тёмная, в тон приложению; атрибуция — в подписи под картой (обязательна по
- * лицензии). Проекция — Web Mercator (иначе тайлы не лягут); зум подбирается
- * так, чтобы bounding box точек влез в панель, тайлы режутся clipPath.
- * ОФФЛАЙН-ФОЛЛБЕК: пока не загрузился ни один тайл (или сеть недоступна),
- * рисуется прежняя градусная сетка — карточка никогда не пустая.
+ * Basemap — CARTO dark_matter raster tiles (© OpenStreetMap © CARTO): dark,
+ * matching the app; attribution — in the caption under the map (required by
+ * license). Projection — Web Mercator (otherwise tiles won't align); zoom is
+ * chosen so the points' bounding box fits the panel, tiles are clipped with
+ * clipPath. OFFLINE FALLBACK: until at least one tile loads (or network is
+ * unavailable), the previous degree grid is drawn — the card is never empty.
  *
- * Величина value кодируется ПОСЛЕДОВАТЕЛЬНО одной тональностью: площадь
- * маркера (sqrt-шкала) + непрозрачность; кольцо поверхности отделяет маркеры
- * от пёстрой подложки. Hover-тултип, хит-таргет ≥ 12px, клавиатура; клик по
- * точке → ClickContext (on:'point').
+ * value magnitude is encoded CONSISTENTLY with one hue: marker area (sqrt
+ * scale) + opacity; surface-colored ring separates markers from the busy
+ * basemap. Hover tooltip, hit target ≥ 12px, keyboard; point click →
+ * ClickContext (on:'point').
  *
- * ЗУМ И ПАНОРАМА (конвенции TimelineCard): pinch/Ctrl+колесо — непрерывный
- * зум вокруг курсора, перетаскивание — панорама (порог 4px отделяет клик по
- * маркеру), кнопки +/−/⟲ — то же с клавиатуры и на тачах, двойной клик —
- * сброс к автофиту. Обычный скролл отдаётся странице. Вид {z, cx, cy} живёт
- * поверх автофита; кластеризация пересчитывается на каждый вид, поэтому при
- * приближении кластеры распадаются на отдельные точки. Тайлы берутся с
- * ближайшего целого зума и масштабируются (2^(z − zInt)).
+ * ZOOM AND PAN (TimelineCard conventions): pinch/Ctrl+wheel — continuous zoom
+ * around cursor, drag — pan (4px threshold separates marker click), +/−/⟲
+ * buttons — same from keyboard and touch, double-click — reset to auto-fit.
+ * Normal scroll goes to the page. View {z, cx, cy} lives on top of auto-fit;
+ * clustering is recomputed on every view, so zooming in splits clusters into
+ * individual points. Tiles come from the nearest integer zoom and are scaled
+ * (2^(z − zInt)).
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -36,27 +36,27 @@ const INNER_W = VB_W - M.left - M.right;
 const INNER_H = VB_H - M.top - M.bottom;
 const PANEL_CX = M.left + INNER_W / 2;
 const PANEL_CY = M.top + INNER_H / 2;
-/** Экранный размер тайла в единицах viewBox (256 @2x — чётко на ретине). */
+/** Tile screen size in viewBox units (256 @2x — sharp on retina). */
 const TILE = 256;
 const MAX_ZOOM = 18;
 const MIN_ZOOM = 1;
-/** Порог панорамы в единицах viewBox: до него жест остаётся кликом по маркеру. */
+/** Pan threshold in viewBox units: below it the gesture stays a marker click. */
 const PAN_THRESHOLD = 4;
 /**
- * Радиус кластеризации в единицах viewBox: точки ближе этого сливаются в один
- * маркер со счётчиком. Радиус мал — сливаются только реально перекрывающиеся
- * точки; разнесённые (например именованные районы) остаются раздельными, так
- * что кластеризация самоадаптивна и не портит разреженные карты.
+ * Clustering radius in viewBox units: points closer than this merge into one
+ * marker with a counter. Radius is small — only truly overlapping points merge;
+ * separated ones (e.g. named districts) stay distinct, so clustering is
+ * self-adaptive and doesn't ruin sparse maps.
  */
 const CLUSTER_RADIUS = 18;
 
-/** Тайлы CARTO (dark) — бесплатная подложка с обязательной атрибуцией. */
+/** CARTO tiles (dark) — free basemap with mandatory attribution. */
 function tileUrl(z: number, x: number, y: number): string {
   const sub = "abcd"[(x + y) % 4];
   return `https://${sub}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}@2x.png`;
 }
 
-/** «Красивый» шаг градусной сетки под размах в градусах (оффлайн-фоллбек). */
+/** "Nice" degree grid step for span in degrees (offline fallback). */
 function niceDegreeStep(span: number): number {
   const steps = [0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 45];
   const rough = span / 4;
@@ -66,22 +66,22 @@ function niceDegreeStep(span: number): number {
   return 45;
 }
 
-/** Подпись координаты с точностью шага сетки: 40.75° / −73.98°. */
+/** Coordinate label with grid step precision: 40.75° / −73.98°. */
 function fmtDegree(v: number, step: number): string {
   const decimals = Math.max(0, Math.min(4, -Math.floor(Math.log10(step))));
   return `${v.toFixed(decimals)}°`;
 }
 
-/** Web Mercator: (lon, lat) → нормализованные мировые координаты [0..1]. */
+/** Web Mercator: (lon, lat) → normalized world coordinates [0..1]. */
 function mercX(lon: number): number {
   return (lon + 180) / 360;
 }
 function mercY(lat: number): number {
-  // Кламп ±85.05° — предел проекции; на данных это не сказывается.
+  // Clamp ±85.05° — projection limit; doesn't affect typical data.
   const phi = (Math.max(-85.05, Math.min(85.05, lat)) * Math.PI) / 180;
   return (1 - Math.log(Math.tan(phi) + 1 / Math.cos(phi)) / Math.PI) / 2;
 }
-/** Обратный Web Mercator — для градусных тиков видимой области. */
+/** Inverse Web Mercator — for degree ticks of the visible area. */
 function invMercLon(x: number): number {
   return x * 360 - 180;
 }
@@ -89,7 +89,7 @@ function invMercLat(y: number): number {
   return (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
 }
 
-/** Вид карты: непрерывный зум + центр в мировых координатах Меркатора [0..1]. */
+/** Map view: continuous zoom + center in Mercator world coordinates [0..1]. */
 type MapView = { z: number; cx: number; cy: number };
 
 type Tile = { key: string; url: string; px: number; py: number };
@@ -98,21 +98,21 @@ type Projection = {
   x: (lon: number) => number;
   y: (lat: number) => number;
   tiles: Tile[];
-  /** Экранный размер тайла: TILE × 2^(z − zInt) при дробном зуме. */
+  /** Tile screen size: TILE × 2^(z − zInt) at fractional zoom. */
   tileSize: number;
   latTicks: number[];
   lonTicks: number[];
   latStep: number;
   lonStep: number;
-  /** Автофит-вид (цель сброса) и эффективный текущий вид (после клампов). */
+  /** Auto-fit view (reset target) and effective current view (after clamps). */
   fit: MapView;
   view: MapView;
 };
 
 /**
- * Проекция Web Mercator: автофит bbox точек в панель ЛИБО явный вид
- * {z, cx, cy} от зума/панорамы (центр клампится краями мира), + тайлы
- * подложки и градусные тики по видимой области.
+ * Web Mercator projection: auto-fit points bbox into panel OR explicit view
+ * {z, cx, cy} from zoom/pan (center clamped to world edges), + basemap tiles
+ * and degree ticks for the visible area.
  */
 function buildProjection(points: MapPoint[], overrideView: MapView | null): Projection {
   let minLat = Math.min(...points.map((p) => p.lat));
@@ -120,7 +120,7 @@ function buildProjection(points: MapPoint[], overrideView: MapView | null): Proj
   let minLon = Math.min(...points.map((p) => p.lon));
   let maxLon = Math.max(...points.map((p) => p.lon));
 
-  // Вырожденный размах (одна точка) — раздвигаем на ±0.01°.
+  // Degenerate span (single point) — expand by ±0.01°.
   if (maxLat - minLat < 1e-6) {
     minLat -= 0.01;
     maxLat += 0.01;
@@ -129,7 +129,7 @@ function buildProjection(points: MapPoint[], overrideView: MapView | null): Proj
     minLon -= 0.01;
     maxLon += 0.01;
   }
-  // Поля 6% — маркеры у края не режутся рамкой.
+  // 6% padding — markers at the edge aren't clipped by the frame.
   const padLat = (maxLat - minLat) * 0.06;
   const padLon = (maxLon - minLon) * 0.06;
   minLat -= padLat;
@@ -137,9 +137,9 @@ function buildProjection(points: MapPoint[], overrideView: MapView | null): Proj
   minLon -= padLon;
   maxLon += padLon;
 
-  // Автофит: bounding box (в мировых координатах Меркатора) влезает в панель.
+  // Auto-fit: bounding box (in Mercator world coordinates) fits in the panel.
   const dmx = Math.max(mercX(maxLon) - mercX(minLon), 1e-9);
-  const dmy = Math.max(mercY(minLat) - mercY(maxLat), 1e-9); // y растёт вниз
+  const dmy = Math.max(mercY(minLat) - mercY(maxLat), 1e-9); // y grows downward
   const zFit = Math.floor(
     Math.log2(Math.min(INNER_W / (TILE * dmx), INNER_H / (TILE * dmy))),
   );
@@ -149,12 +149,12 @@ function buildProjection(points: MapPoint[], overrideView: MapView | null): Proj
     cy: (mercY(maxLat) + mercY(minLat)) / 2,
   };
 
-  // Эффективный вид: явный или автофит; центр кламплен так, чтобы панель не
-  // выезжала за край мира (а мир меньше панели — центрируется).
+  // Effective view: explicit or auto-fit; center clamped so the panel doesn't
+  // go past the world edge (if the world is smaller than the panel — centered).
   const z = overrideView
     ? Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, overrideView.z))
     : fit.z;
-  const world = TILE * 2 ** z; // размер мира в px на этом зуме
+  const world = TILE * 2 ** z; // world size in px at this zoom
   const clampCenter = (c: number, inner: number) => {
     const half = inner / 2 / world;
     return half >= 0.5 ? 0.5 : Math.min(1 - half, Math.max(half, c));
@@ -168,12 +168,12 @@ function buildProjection(points: MapPoint[], overrideView: MapView | null): Proj
   const x = (lon: number) => PANEL_CX + (mercX(lon) - view.cx) * world;
   const y = (lat: number) => PANEL_CY + (mercY(lat) - view.cy) * world;
 
-  // Тайлы ближайшего целого зума; при дробном z масштабируются рендером.
+  // Tiles at nearest integer zoom; scaled by renderer at fractional z.
   const zInt = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(z)));
   const n = 2 ** zInt;
   const tileSize = world / n;
 
-  // Видимые границы панели в мировых координатах — тайлы и тики по ним.
+  // Visible panel bounds in world coordinates — tiles and ticks from them.
   const worldLeft = view.cx - INNER_W / 2 / world;
   const worldRight = view.cx + INNER_W / 2 / world;
   const worldTop = view.cy - INNER_H / 2 / world;
@@ -194,8 +194,8 @@ function buildProjection(points: MapPoint[], overrideView: MapView | null): Proj
     }
   }
 
-  // Градусные тики по ВИДИМОЙ области — живут при зуме и панораме
-  // (подписи всегда; линии — только в оффлайн-фоллбеке).
+  // Degree ticks for VISIBLE area — live during zoom and pan
+  // (labels always; lines — only in offline fallback).
   const visMinLat = invMercLat(worldBottom);
   const visMaxLat = invMercLat(worldTop);
   const visMinLon = invMercLon(worldLeft);
@@ -221,7 +221,7 @@ function buildProjection(points: MapPoint[], overrideView: MapView | null): Proj
   return { x, y, tiles, tileSize, latTicks, lonTicks, latStep, lonStep, fit, view };
 }
 
-/** Размер/яркость по value: sqrt-шкала площади + непрозрачность (одна тональность). */
+/** Size/brightness by value: sqrt area scale + opacity (single hue). */
 function buildValueScale(items: { value?: number }[]) {
   const values = items.filter((p) => p.value !== undefined).map((p) => p.value as number);
   if (values.length === 0) {
@@ -245,26 +245,26 @@ function buildValueScale(items: { value?: number }[]) {
   };
 }
 
-/** Кластер точек: экранный и гео-центр (взвешенные), число и сумма величин. */
+/** Point cluster: screen and geo center (weighted), count and value sum. */
 type Cluster = {
   cx: number;
   cy: number;
   lat: number;
   lon: number;
   count: number;
-  /** Сумма value членов (undefined — если ни у одного члена нет value). */
+  /** Sum of member values (undefined — if no member has value). */
   value?: number;
-  /** Подпись доминирующей (самой тяжёлой) точки кластера. */
+  /** Label of the dominant (heaviest) cluster point. */
   label?: string;
-  /** Индекс доминирующей точки в spec.points — по нему собирается клик. */
+  /** Index of the dominant point in spec.points — used to build the click. */
   seedIdx: number;
 };
 
 /**
- * Жадная кластеризация по ЭКРАННОМУ расстоянию: точки сортируются по величине,
- * каждая тяжёлая становится сидом и поглощает все ещё не занятые точки в радиусе
- * CLUSTER_RADIUS. Центр кластера — взвешенный по величине (тяжёлые тянут центр
- * на себя), величина — сумма, подпись — от сида. O(n²) при n ≤ 1000 — дёшево.
+ * Greedy clustering by SCREEN distance: points sorted by magnitude, each heavy
+ * one becomes a seed and absorbs all still-free points within CLUSTER_RADIUS.
+ * Cluster center — magnitude-weighted (heavy ones pull the center), value — sum,
+ * label — from seed. O(n²) at n ≤ 1000 — cheap.
  */
 function clusterPoints(
   points: MapPoint[],
@@ -275,7 +275,7 @@ function clusterPoints(
     p,
     x: proj.x(p.lon),
     y: proj.y(p.lat),
-    // Вес для центра тяжести: величина, а без величины — равный (1).
+    // Weight for center of mass: magnitude, or equal (1) without magnitude.
     w: p.value !== undefined && p.value > 0 ? p.value : 1,
   }));
   scr.sort((a, b) => (b.p.value ?? 0) - (a.p.value ?? 0));
@@ -328,9 +328,9 @@ export function MapCard({
   const tCards = useTranslations("cards");
   const numFmt = useNumberFormat({ maximumFractionDigits: 2 });
   const [hover, setHover] = useState<Hover>(null);
-  /** Сколько тайлов подложки реально загрузилось: 0 → оффлайн-фоллбек с сеткой. */
+  /** How many basemap tiles actually loaded: 0 → offline fallback with grid. */
   const [tilesLoaded, setTilesLoaded] = useState(0);
-  /** Явный вид (зум/панорама); null — автофит по данным. */
+  /** Explicit view (zoom/pan); null — auto-fit from data. */
   const [view, setView] = useState<MapView | null>(null);
   const [panning, setPanning] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -345,9 +345,9 @@ export function MapCard({
   const pointTarget = findClickTarget(spec.clicks, "point");
   const clickable = Boolean(pointTarget && onClickContext);
 
-  // Новые данные — новый автофит: явный вид сбрасывается. Корректировка
-  // состояния прямо в рендере (официальный паттерн React для «сброса по
-  // смене пропа») — без эффекта и лишнего кадра со старым видом.
+  // New data — new auto-fit: explicit view resets. State adjustment directly
+  // in render (official React pattern for "reset on prop change") — no effect
+  // and no extra frame with the old view.
   const [prevPoints, setPrevPoints] = useState(spec.points);
   if (prevPoints !== spec.points) {
     setPrevPoints(spec.points);
@@ -357,20 +357,19 @@ export function MapCard({
   const layout = useMemo(() => {
     if (spec.points.length === 0) return null;
     const proj = buildProjection(spec.points, view);
-    // Близкие точки объединяем в кластеры; шкала размера — уже по величине
-    // КЛАСТЕРА (сумма может превышать максимум одиночной точки). Кластеры
-    // живут в экранных координатах, поэтому при зуме пересчитываются —
-    // приближение раскрывает кластер на отдельные точки.
+    // Merge nearby points into clusters; size scale — by CLUSTER magnitude
+    // (sum can exceed a single point's max). Clusters live in screen coords,
+    // so they're recomputed on zoom — zooming in splits a cluster into points.
     const clusters = clusterPoints(spec.points, proj);
     const scale = buildValueScale(clusters);
-    // Крупные снизу, мелкие сверху — маленькие маркеры не тонут под большими.
+    // Large at bottom, small on top — small markers don't sink under big ones.
     const order = clusters
       .map((c, i) => ({ c, i }))
       .sort((a, b) => (b.c.value ?? 0) - (a.c.value ?? 0));
     return { proj, scale, clusters, order, clustered: clusters.length < spec.points.length };
   }, [spec.points, view]);
 
-  /** Координаты события мыши → координаты viewBox. */
+  /** Mouse event coordinates → viewBox coordinates. */
   const vbPos = (clientX: number, clientY: number) => {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return { x: PANEL_CX, y: PANEL_CY };
@@ -380,7 +379,7 @@ export function MapCard({
     };
   };
 
-  /** Зум на dz уровней; anchor (viewBox) — гео-точка под ним остаётся на месте. */
+  /** Zoom by dz levels; anchor (viewBox) — geo point under it stays in place. */
   const zoomBy = (dz: number, anchor?: { x: number; y: number }) => {
     if (!layout) return;
     const cur = layout.proj.view;
@@ -401,9 +400,9 @@ export function MapCard({
     }
   };
 
-  // Колесо: pinch/Ctrl — зум вокруг курсора; обычный скролл отдаём странице.
-  // Нативный listener с passive:false — React вешает wheel пассивно,
-  // preventDefault не сработал бы (паттерн TimelineCard).
+  // Wheel: pinch/Ctrl — zoom around cursor; normal scroll goes to the page.
+  // Native listener with passive:false — React attaches wheel passively,
+  // preventDefault wouldn't work (TimelineCard pattern).
   const wheelRef = useRef<(e: WheelEvent) => void>(() => {});
   const handleWheel = (e: WheelEvent) => {
     if (!layout || !(e.ctrlKey || e.metaKey)) return;
@@ -421,8 +420,8 @@ export function MapCard({
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
-  // Панорама: до порога — обычный клик по маркеру; после — захват указателя
-  // (клики маркеров при этом не стреляют — их перехватывает svg).
+  // Pan: below threshold — normal marker click; after — pointer capture
+  // (marker clicks don't fire — svg intercepts them).
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.button !== 0 || !layout) return;
     const p = vbPos(e.clientX, e.clientY);
@@ -441,12 +440,12 @@ export function MapCard({
     if (!drag.panning && Math.hypot(p.x - drag.x0, p.y - drag.y0) > PAN_THRESHOLD) {
       drag.panning = true;
       try {
-        // Захват глушит клики маркеров до конца панорамы; на синтетических
-        // указателях (тесты, автоматизация) капчер может кинуть — панорама
-        // обязана работать и без него.
+        // Capture suppresses marker clicks until pan ends; on synthetic
+        // pointers (tests, automation) capture may throw — pan must work
+        // without it too.
         svgRef.current?.setPointerCapture(drag.pointerId);
       } catch {
-        // NotFoundError для неактивного pointerId — игнорируем
+        // NotFoundError for inactive pointerId — ignore
       }
       setHover(null);
       setPanning(true);
@@ -475,7 +474,7 @@ export function MapCard({
   const { proj, scale, clusters, order, clustered } = layout;
   const basemapVisible = tilesLoaded > 0;
 
-  // Клик по кластеру уводит в доминирующую (самую тяжёлую) точку области.
+  // Cluster click drills into the dominant (heaviest) point in the area.
   const fire = (seedIdx: number) => {
     if (!pointTarget || !onClickContext) return;
     onClickContext(
@@ -493,7 +492,7 @@ export function MapCard({
 
   return (
     <div>
-      {/* Легенда величины: размер и яркость — одна последовательная шкала. */}
+      {/* Value legend: size and brightness — one sequential scale. */}
       <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs">
         {scale.hasValues ? (
           <span className="flex items-center gap-1.5 text-muted">
@@ -521,7 +520,7 @@ export function MapCard({
           ref={svgRef}
           viewBox={`0 0 ${VB_W} ${VB_H}`}
           className={`block w-full select-none ${panning ? "cursor-grabbing" : "cursor-grab"}`}
-          // touch-action: none — тач-драг уходит в панораму, не в скролл страницы
+          // touch-action: none — touch drag goes to pan, not page scroll
           style={{ touchAction: "none" }}
           role="img"
           aria-label={`${t("ariaBase", {
@@ -554,7 +553,7 @@ export function MapCard({
             </clipPath>
           </defs>
 
-          {/* Подложка: тайлы CARTO dark, приглушены под точки данных. */}
+          {/* Basemap: CARTO dark tiles, muted under data points. */}
           <g clipPath={`url(#${clipId})`}>
             {proj.tiles.map((t) => (
               <image
@@ -567,14 +566,14 @@ export function MapCard({
                 opacity={0.75}
                 onLoad={() => setTilesLoaded((n) => n + 1)}
                 onError={(e) => {
-                  // Битый/недоступный тайл прячем — под ним фоллбек-сетка.
+                  // Hide broken/unavailable tile — fallback grid underneath.
                   (e.currentTarget as SVGImageElement).style.display = "none";
                 }}
               />
             ))}
           </g>
 
-          {/* Оффлайн-фоллбек: градусная сетка, пока нет ни одного тайла. */}
+          {/* Offline fallback: degree grid until no tile has loaded. */}
           {!basemapVisible &&
             proj.latTicks.map((lat) => (
               <line
@@ -600,7 +599,7 @@ export function MapCard({
               />
             ))}
 
-          {/* Рамка панели поверх подложки */}
+          {/* Panel frame over basemap */}
           <rect
             x={M.left}
             y={M.top}
@@ -612,7 +611,7 @@ export function MapCard({
             rx={4}
           />
 
-          {/* Подписи координат по краям (и с подложкой, и без) */}
+          {/* Coordinate labels on edges (with and without basemap) */}
           {proj.latTicks.map((lat) => (
             <text
               key={`latl${lat}`}
@@ -638,13 +637,13 @@ export function MapCard({
             </text>
           ))}
 
-          {/* Кластеры: крупные снизу, мелкие сверху; кольцо поверхности — зазор.
-              Кластер из >1 точки — крупнее, с числом-счётчиком внутри. */}
+          {/* Clusters: large at bottom, small on top; surface ring — gap.
+              Cluster of >1 points — larger, with count inside. */}
           <g clipPath={`url(#${clipId})`}>
             {order.map(({ c, i }) => {
               const isHovered = hover?.idx === i;
               const base = scale.r(c.value);
-              // Кластеру нужен минимум под цифру; одиночке — как есть.
+              // Cluster needs minimum size for the digit; single point — as-is.
               const r = c.count > 1 ? Math.max(base, 9) : base;
               const showCount = c.count > 1 && r >= 8;
               return (
@@ -696,7 +695,7 @@ export function MapCard({
                     onFocus={() => setHover({ idx: i, cx: c.cx, cy: c.cy })}
                     onBlur={() => setHover(null)}
                     onClick={() => fire(c.seedIdx)}
-                    // Быстрый двойной клик по маркеру — это два дрилла, а не сброс вида.
+                    // Quick double-click on marker — two drills, not view reset.
                     onDoubleClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
                       if (clickable && (e.key === "Enter" || e.key === " ")) {
@@ -711,7 +710,7 @@ export function MapCard({
           </g>
         </svg>
 
-        {/* Кнопки зума: то же, что pinch/Ctrl+колесо, но дискаверабельно */}
+        {/* Zoom buttons: same as pinch/Ctrl+wheel, but discoverable */}
         <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
           <button
             type="button"
@@ -740,7 +739,7 @@ export function MapCard({
           </button>
         </div>
 
-        {/* Тултип: имя — главное, величина и координаты — вторичные */}
+        {/* Tooltip: name — primary, value and coordinates — secondary */}
         {hover && hovered && (
           <div
             className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-background px-2.5 py-1.5 shadow-lg"
@@ -777,7 +776,7 @@ export function MapCard({
         )}
       </div>
 
-      {/* Как читать + обязательная атрибуция подложки */}
+      {/* How to read + mandatory basemap attribution */}
       <p className="mt-1 px-1 text-[10px] text-muted/80">
         {clustered ? t("howToClustered") : t("howToEach")}
         {scale.hasValues

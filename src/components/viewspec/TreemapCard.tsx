@@ -1,17 +1,17 @@
 "use client";
 
 /**
- * Treemap — части целого: плитки с площадью ∝ value.
+ * Treemap — parts of a whole: tiles with area ∝ value.
  *
- * Рукописный SVG без зависимостей. Раскладка — squarified (Bruls et al.):
- * детерминированный жадный алгоритм держит плитки близкими к квадрату.
- * Порядок — по убыванию value (требование алгоритма), «прочее» ложится в угол.
+ * Hand-written SVG without dependencies. Layout — squarified (Bruls et al.):
+ * deterministic greedy algorithm keeps tiles close to square. Order — by
+ * descending value (algorithm requirement), "other" goes in the corner.
  *
- * Цвет: при наличии групп — категориальный (series-1..4 по группам, легенда
- * под чартом; плитки без группы — нейтральные); без групп — один тон series-1
- * с градацией прозрачности по рангу (крупное ярче). Подписи — только в
- * плитках, где влезают (label + доля), остальное раскрывает hover-тултип.
- * Клик по плитке → ClickContext по семантике ClickTarget on:'tile'.
+ * Color: with groups — categorical (series-1..4 by group, legend below chart;
+ * tiles without group — neutral); without groups — single series-1 hue with
+ * opacity gradient by rank (larger brighter). Labels — only in tiles where they
+ * fit (label + share), rest revealed by hover tooltip. Tile click → ClickContext
+ * per ClickTarget on:'tile' semantics.
  */
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -21,10 +21,10 @@ import { buildClickContext, findClickTarget, tileElementFields } from "./click";
 
 const VB_W = 640;
 const VB_H = 300;
-/** Оценка ширины текста: ~6.2px на символ при fontSize 11. */
+/** Text width estimate: ~6.2px per character at fontSize 11. */
 const CHAR_W = 6.2;
 
-/** Компактная подпись: 50, 500, 5k, 50k, 1.2M (как в ScatterCard). */
+/** Compact label: 50, 500, 5k, 50k, 1.2M (like ScatterCard). */
 function fmtCompact(v: number): string {
   const a = Math.abs(v);
   if (a >= 1e6) return `${+(v / 1e6).toFixed(a >= 1e7 ? 0 : 1)}M`;
@@ -33,7 +33,7 @@ function fmtCompact(v: number): string {
   return String(+v.toFixed(2));
 }
 
-/** Доля в процентах: < 1% → десятые, иначе целые. */
+/** Share as percentage: < 1% → tenths, otherwise whole numbers. */
 function fmtShare(share: number): string {
   const pct = share * 100;
   if (pct < 1) return `${+pct.toFixed(1)}%`;
@@ -43,9 +43,9 @@ function fmtShare(share: number): string {
 type Rect = { x: number; y: number; w: number; h: number };
 
 /**
- * Squarified treemap: значения (по убыванию, отмасштабированные так, что
- * сумма = площадь rect) → прямоугольники. Ряд наращивается, пока худшее
- * соотношение сторон в нём улучшается, и укладывается вдоль короткой стороны.
+ * Squarified treemap: values (descending, scaled so sum = rect area) →
+ * rectangles. Row grows while worst aspect ratio in it improves, laid along
+ * the short side.
  */
 function squarify(values: number[], rect: Rect): Rect[] {
   const out: Rect[] = new Array(values.length);
@@ -72,7 +72,7 @@ function squarify(values: number[], rect: Rect): Rect[] {
       rowMin = mn;
       j++;
     }
-    // Толщина ряда вдоль длинной стороны; элементы стопкой вдоль короткой.
+    // Row thickness along long side; elements stacked along short side.
     const across = rowSum / Math.max(side, 1e-9);
     let offset = 0;
     for (let k = i; k < j; k++) {
@@ -132,7 +132,7 @@ export function TreemapCard({
     const scaled = sorted.map((it) => (it.value / total) * VB_W * VB_H);
     const rects = squarify(scaled, { x: 0, y: 0, w: VB_W, h: VB_H });
 
-    // Цвет группы — по порядку появления в отсортированных плитках.
+    // Group color — by order of appearance in sorted tiles.
     const groupColor = new Map<string, string>();
     for (const it of sorted) {
       if (it.group !== undefined && !groupColor.has(it.group)) {
@@ -150,7 +150,7 @@ export function TreemapCard({
           ? groupColor.get(item.group)!
           : "var(--muted)"
         : "var(--viz-series-1)",
-      // Без групп — градация одного тона по рангу: крупное ярче.
+      // Without groups — single hue gradient by rank: larger brighter.
       fillOpacity: hasGroups
         ? 0.82
         : 0.88 - 0.5 * (sorted.length > 1 ? i / (sorted.length - 1) : 0),
@@ -189,7 +189,7 @@ export function TreemapCard({
           const { x, y, w, h } = tile.rect;
           const isHovered = hover === i;
           const label = tile.item.label;
-          // Подписи только там, где влезают; остальное — тултип.
+          // Labels only where they fit; rest — tooltip.
           const fitsLabel = w >= label.length * CHAR_W + 10 && h >= 18;
           const fitsShare = fitsLabel && h >= 34 && w >= 44;
           return (
@@ -252,7 +252,7 @@ export function TreemapCard({
         })}
       </svg>
 
-      {/* Легенда групп — только когда группы есть */}
+      {/* Group legend — only when groups exist */}
       {legend.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
           {legend.map(([group, color]) => (
@@ -268,7 +268,7 @@ export function TreemapCard({
         </div>
       )}
 
-      {/* Тултип: значение и доля — главное; подпись величины — вторичная */}
+      {/* Tooltip: value and share — primary; value label — secondary */}
       {hover !== null && hovered && (
         <div
           className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-background px-2.5 py-1.5 shadow-lg"

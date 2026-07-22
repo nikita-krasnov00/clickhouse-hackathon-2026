@@ -1,14 +1,13 @@
 "use client";
 
 /**
- * Funnel — этапы процесса: центрированные полосы, ширина ∝ count.
+ * Funnel — process stages: centered bars, width ∝ count.
  *
- * Рукописный SVG в стиле HistogramCard. Между этапами — процент перехода
- * (count следующего к предыдущему); внутри широкой полосы — доля от первого
- * этапа. Немонотонный шаг (> 100%) честно подсвечивается предупреждающим
- * цветом, а не прячется. Под чартом — сквозная конверсия: последний этап к
- * первому. Клик по этапу → ClickContext по семантике ClickTarget on:'bucket'
- * (этап и есть Bucket {label, count}).
+ * Hand-written SVG in HistogramCard style. Between stages — transition percentage
+ * (next count to previous); inside wide bar — share of first stage. Non-monotonic
+ * step (> 100%) honestly highlighted with warning color, not hidden. Below chart —
+ * end-to-end conversion: last stage to first. Stage click → ClickContext per
+ * ClickTarget on:'bucket' semantics (stage is Bucket {label, count}).
  */
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -19,11 +18,11 @@ import { bucketElementFields, buildClickContext, findClickTarget } from "./click
 const VB_W = 640;
 const PAD_Y = 6;
 const BAR_H = 30;
-const GAP = 24; // зазор между полосами — здесь живёт процент перехода
+const GAP = 24; // gap between bars — transition percentage lives here
 const CAP_R = 4;
-/** Поле для подписи этапа слева и счётчика справа. */
+/** Space for stage label on the left and count on the right. */
 const SIDE = 118;
-/** Минимальная видимая ширина полосы — нулевой этап не исчезает. */
+/** Minimum visible bar width — zero stage doesn't disappear. */
 const MIN_W = 3;
 
 export function FunnelCard({
@@ -60,9 +59,9 @@ export function FunnelCard({
         w,
         x: (VB_W - w) / 2,
         y: PAD_Y + i * (BAR_H + GAP),
-        /** Доля от первого этапа (база воронки). */
+        /** Share of first stage (funnel base). */
         ofFirst: spec.stages[0].count > 0 ? stage.count / spec.stages[0].count : 0,
-        /** Переход с предыдущего этапа; у первого отсутствует. */
+        /** Transition from previous stage; absent for the first. */
         step: i > 0 && spec.stages[i - 1].count > 0 ? stage.count / spec.stages[i - 1].count : null,
       };
     });
@@ -106,12 +105,12 @@ export function FunnelCard({
         {rows.map((row, i) => {
           const isHovered = hover === i;
           const cy = row.y + BAR_H / 2;
-          // Хит-таргет строки: до середины зазоров (краевые — до кромки кадра).
+          // Row hit target: to middle of gaps (edges — to frame border).
           const hitY0 = row.y - (i === 0 ? PAD_Y : GAP / 2);
           const hitY1 = row.y + BAR_H + (i === rows.length - 1 ? PAD_Y : GAP / 2);
           return (
             <g key={`${row.stage.label}-${i}`}>
-              {/* Процент перехода — в зазоре над полосой, у оси воронки */}
+              {/* Transition percentage — in gap above bar, at funnel axis */}
               {row.step !== null && (
                 <text
                   x={VB_W / 2}
@@ -134,7 +133,7 @@ export function FunnelCard({
                 fillOpacity={isHovered ? 1 : 0.85}
                 pointerEvents="none"
               />
-              {/* Доля от первого этапа — внутри полосы, когда влезает */}
+              {/* Share of first stage — inside bar when it fits */}
               {row.w >= 52 && i > 0 && (
                 <text
                   x={VB_W / 2}
@@ -148,7 +147,7 @@ export function FunnelCard({
                   {fmtPct(row.ofFirst)}
                 </text>
               )}
-              {/* Имя этапа слева, счётчик справа — на постоянных местах */}
+              {/* Stage name left, count right — at fixed positions */}
               <text
                 x={8}
                 y={cy + 3.5}
@@ -169,7 +168,7 @@ export function FunnelCard({
               >
                 {numFmt.format(row.stage.count)}
               </text>
-              {/* Хит-таргет — вся строка этапа */}
+              {/* Hit target — entire stage row */}
               <rect
                 x={0}
                 y={hitY0}
@@ -201,7 +200,7 @@ export function FunnelCard({
         })}
       </svg>
 
-      {/* Сквозная конверсия воронки */}
+      {/* End-to-end funnel conversion */}
       {overall !== null && (
         <p className="mt-2 text-[11px] text-muted">
           {t("overallLabel")}{" "}
@@ -215,7 +214,7 @@ export function FunnelCard({
         </p>
       )}
 
-      {/* Тултип этапа */}
+      {/* Stage tooltip */}
       {hover !== null && hovered && (
         <div
           className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-background px-2.5 py-1.5 shadow-lg"

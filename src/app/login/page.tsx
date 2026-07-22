@@ -1,7 +1,7 @@
 /**
- * Страница входа — единственная страница без сессии (proxy.ts её пропускает).
- * Кнопка запускает OAuth-флоу Google через server action NextAuth; после
- * входа — возврат на callbackUrl (только внутренний путь, без open-redirect).
+ * Login page — the only page without a session (proxy.ts lets it through).
+ * The button starts the Google OAuth flow via a NextAuth server action; after
+ * sign-in, redirect to callbackUrl (internal path only, no open redirect).
  */
 import { redirect } from "next/navigation";
 import { getTranslations } from "next-intl/server";
@@ -41,7 +41,7 @@ export default async function LoginPage({ searchParams }: Props) {
 
   const t = await getTranslations("login");
   const { callbackUrl, error } = await searchParams;
-  // Возврат только на внутренний путь ("//host" — тоже внешний, отсекаем).
+  // Return only to an internal path ("//host" is external too — reject it).
   const redirectTo =
     callbackUrl?.startsWith("/") && !callbackUrl.startsWith("//")
       ? callbackUrl

@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Histogram (C5) — вертикальные бары корзин {label, count}.
+ * Histogram (C5) — vertical bucket bars {label, count}.
  *
- * Рукописный SVG в стиле TimelineCard: hairline-сетка, тонкие бары (≤24px)
- * со скруглённым верхом (4px) и квадратным основанием на базовой линии,
- * прямые подписи только у экстремума, hover-тултип, хит-таргет — вся полоса
- * корзины (шире видимого бара). Клик по корзине → ClickContext строго по
- * семантике ClickTarget on:'bucket' (selectionKeys из label/count).
+ * Hand-written SVG in TimelineCard style: hairline grid, thin bars (≤24px)
+ * with rounded top (4px) and square base on the baseline, direct labels only
+ * at the extremum, hover tooltip, hit target — entire bucket band (wider than
+ * visible bar). Bucket click → ClickContext strictly per ClickTarget on:'bucket'
+ * semantics (selectionKeys from label/count).
  */
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -18,10 +18,10 @@ import { bucketElementFields, buildClickContext, findClickTarget } from "./click
 const VB_W = 640;
 const VB_H = 260;
 const M = { top: 22, right: 8, bottom: 48, left: 48 };
-const BAR_W = 24; // cap толщины бара — «тонкие марки», воздух в полосе
-const CAP_R = 4; // скругление данных-конца (верх), основание квадратное
+const BAR_W = 24; // bar thickness cap — "thin marks", air in the band
+const CAP_R = 4; // rounded data end (top), square base
 
-/** «Красивый» шаг оси значений: 1/2/5 × 10^n (как в TimelineCard). */
+/** "Nice" value axis step: 1/2/5 × 10^n (like TimelineCard). */
 function niceStep(rough: number): number {
   const pow = 10 ** Math.floor(Math.log10(Math.max(rough, 1e-9)));
   const unit = rough / pow;
@@ -29,7 +29,7 @@ function niceStep(rough: number): number {
   return factor * pow;
 }
 
-/** Путь бара: скруглённый верх (r), квадратное основание. */
+/** Bar path: rounded top (r), square base. */
 function barPath(x: number, yTop: number, w: number, yBase: number): string {
   const r = Math.min(CAP_R, Math.max(yBase - yTop, 0), w / 2);
   return [
@@ -110,7 +110,7 @@ export function HistogramCard({
         role="img"
         aria-label={spec.title}
       >
-        {/* Сетка значений — hairline, рецессивная */}
+        {/* Value grid — hairline, recessive */}
         {yTicks.map((v) => (
           <g key={v}>
             <line
@@ -133,7 +133,7 @@ export function HistogramCard({
           </g>
         ))}
 
-        {/* Бары + подписи корзин + хит-таргеты на всю полосу */}
+        {/* Bars + bucket labels + hit targets for entire band */}
         {spec.buckets.map((b, i) => {
           const cx = M.left + band * i + band / 2;
           const x0 = cx - barW / 2;
@@ -147,7 +147,7 @@ export function HistogramCard({
                 fillOpacity={isHovered ? 1 : 0.85}
                 pointerEvents="none"
               />
-              {/* Прямая подпись — только у экстремума или под hover (селективно) */}
+              {/* Direct label — only at extremum or on hover (selective) */}
               {(i === maxIdx || isHovered) && (
                 <text
                   x={cx}
@@ -169,7 +169,7 @@ export function HistogramCard({
               >
                 {b.label}
               </text>
-              {/* Хит-таргет: вся полоса корзины, выше видимого бара */}
+              {/* Hit target: entire bucket band, above visible bar */}
               <rect
                 x={M.left + band * i}
                 y={M.top}
@@ -200,7 +200,7 @@ export function HistogramCard({
           );
         })}
 
-        {/* Подпись оси корзин */}
+        {/* Bucket axis label */}
         <text
           x={M.left + (VB_W - M.left - M.right) / 2}
           y={VB_H - 8}
@@ -213,7 +213,7 @@ export function HistogramCard({
         </text>
       </svg>
 
-      {/* Тултип: значение — главное, подпись — вторичная */}
+      {/* Tooltip: value — primary, label — secondary */}
       {hover !== null && hovered && (
         <div
           className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-background px-2.5 py-1.5 shadow-lg"

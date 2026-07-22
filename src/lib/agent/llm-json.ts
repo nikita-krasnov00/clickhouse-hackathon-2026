@@ -1,26 +1,26 @@
 /**
- * Общий слой «строгий JSON от модели»: выделение JSON-объекта из ответа
- * (срезание reasoning-блоков и markdown-фенсов) и диалог со страховкой
- * парсинга — один повторный запрос с текстом ошибки, дальше исключение.
- * Используется и планировщиком SQL (generate-sql.ts), и триажем (triage.ts).
+ * Shared layer for "strict JSON from the model": extract a JSON object from the
+ * response (strip reasoning blocks and markdown fences) and a parsing safety
+ * dialog — one retry request with the error text, then throw. Used by both the
+ * SQL planner (generate-sql.ts) and triage (triage.ts).
  */
 import { chatComplete, type ChatCompleteOptions, type ChatMessage } from "./llm";
 
-/** Срезает reasoning-блоки и markdown-фенсы, выделяет JSON-объект. */
+/** Strip reasoning blocks and markdown fences, extract the JSON object. */
 export function extractJsonObject(content: string): string {
   let text = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   text = text.replace(/```(?:json)?/gi, "").trim();
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
   if (first === -1 || last <= first) {
-    throw new Error("в ответе модели нет JSON-объекта");
+    throw new Error("model response contains no JSON object");
   }
   return text.slice(first, last + 1);
 }
 
 /**
- * Диалог с моделью со страховкой парсинга: при невалидном JSON — один повторный
- * запрос с текстом ошибки, дальше — исключение (его ловит вызывающий).
+ * Model dialog with parsing safety: on invalid JSON — one retry request with
+ * the error text, then throw (caught by the caller).
  */
 export async function askAndParse<T>(
   messages: ChatMessage[],

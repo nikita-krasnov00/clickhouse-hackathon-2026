@@ -1,26 +1,26 @@
 "use client";
 
 /**
- * C2 — подписка на ран investigate через Trigger.dev Realtime.
+ * C2 — subscription to an investigate run via Trigger.dev Realtime.
  *
- * Обёртка над useRealtimeRun (@trigger.dev/react-hooks, канон skill
- * trigger-realtime): runId + publicAccessToken приходят из /api/ask (B7),
- * токен скоуплен на чтение ровно этого рана.
+ * Wrapper over useRealtimeRun (@trigger.dev/react-hooks, canonical
+ * trigger-realtime skill): runId + publicAccessToken come from /api/ask (B7),
+ * token is scoped to read exactly this run.
  *
- * Хук нормализует сырой ран в состояние для карточки прогресса:
- *   - steps     — история RunStep из metadata.steps (каждый элемент строго
- *                 валидируется runStepSchema; мусор молча пропускается —
- *                 лента не должна падать из-за кривого шага);
- *   - lastStep  — последний валидный шаг;
- *   - sqlPreview — последний sqlPreview из шагов reviewing/executing;
- *   - viewSpecs — из шага done (приходит прямо в Realtime-стриме) либо из
- *                 run.output — отдельный fetch результата не нужен;
- *   - boardCards — манифест board_planned, спроецированный на card_ready/
- *                 card_failed по cardId (skeleton-сетка C2 рисуется сразу
- *                 по манифесту, карточки гидратируются на своих местах);
- *                 пусто, если board_planned не было — компонент фоллбечит
- *                 на viewSpecs, как раньше;
- *   - phase     — connecting | running | done | failed (для рендера).
+ * The hook normalizes the raw run into state for the progress card:
+ *   - steps     — RunStep history from metadata.steps (each element strictly
+ *                 validated by runStepSchema; garbage is silently skipped —
+ *                 the feed must not crash on a malformed step);
+ *   - lastStep  — last valid step;
+ *   - sqlPreview — last sqlPreview from reviewing/executing steps;
+ *   - viewSpecs — from the done step (arrives directly in the Realtime stream) or from
+ *                 run.output — no separate result fetch needed;
+ *   - boardCards — board_planned manifest, projected onto card_ready/
+ *                 card_failed by cardId (C2 skeleton grid renders immediately
+ *                 from the manifest, cards hydrate in place);
+ *                 empty if there was no board_planned — component falls back
+ *                 to viewSpecs as before;
+ *   - phase     — connecting | running | done | failed (for rendering).
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -29,10 +29,10 @@ import { runStepSchema, type RunStep, type ViewKind, type ViewSpec } from "@/lib
 import type { investigateTask } from "@/trigger/investigate";
 
 /**
- * Поллинг-фоллбек (риск из PLAN.md: «Realtime не завёлся — деградация до
- * поллинга»): параллельно подписке опрашиваем /api/run-status и берём самое
- * информативное состояние (больше шагов / терминальный статус). Когда Realtime
- * работает, он всегда впереди и поллинг ничего не меняет.
+ * Polling fallback (risk from PLAN.md: "Realtime did not connect — degrade to
+ * polling"): alongside the subscription, poll /api/run-status and take the most
+ * informative state (more steps / terminal status). When Realtime works, it is
+ * always ahead and polling changes nothing.
  */
 type PolledRun = {
   status?: string;
@@ -54,7 +54,7 @@ function usePolledRun(runId: string | undefined, active: boolean): PolledRun | u
         const body = (await res.json()) as PolledRun;
         if (!stop) setPolled(body);
       } catch {
-        // сеть мигнула — следующий тик попробует снова
+        // network blip — next tick will retry
       }
     };
     void tick();
@@ -70,12 +70,12 @@ function usePolledRun(runId: string | undefined, active: boolean): PolledRun | u
 export type InvestigationPhase = "connecting" | "running" | "done" | "failed";
 
 /**
- * Карточка манифеста board_planned, спроецированная на её прогресс:
- *   pending → скелет ещё ждёт card_ready/card_failed со своим cardId;
- *   ready   → скелет гидратируется в spec (+ sql, если карточка sql-based);
- *   failed  → скелет схлопывается в компактную карточку ошибки.
- * Внеплановые card_ready без cardId (или без совпадения в манифесте) тоже
- * приходят как ready — см. computeBoardCards.
+ * board_planned manifest card, projected onto its progress:
+ *   pending → skeleton still waiting for card_ready/card_failed with its cardId;
+ *   ready   → skeleton hydrates into spec (+ sql, if the card is sql-based);
+ *   failed  → skeleton collapses into a compact error card.
+ * Unplanned card_ready without cardId (or without a manifest match) also
+ * arrives as ready — see computeBoardCards.
  */
 export type BoardCard =
   | { cardId: string; kind: ViewKind; title: string; status: "pending" }
@@ -91,26 +91,26 @@ export type BoardCard =
 
 export type InvestigationRunState = {
   phase: InvestigationPhase;
-  /** История шагов конвейера (строго по runStepSchema). */
+  /** Pipeline step history (strictly per runStepSchema). */
   steps: RunStep[];
   lastStep: RunStep | undefined;
   /**
-   * Карточки в порядке готовности: из шагов card_ready ещё ВО ВРЕМЯ рана
-   * (прогрессивная загрузка); фоллбек для старых ранов — done/run.output.
+   * Cards in readiness order: from card_ready steps DURING the run
+   * (progressive loading); fallback for older runs — done/run.output.
    */
   viewSpecs: ViewSpec[] | undefined;
   /**
-   * Карточки в порядке манифеста board_planned (см. BoardCard); пусто, если
-   * манифеста не было вовсе — тогда рендер идёт по viewSpecs.
+   * Cards in board_planned manifest order (see BoardCard); empty if
+   * there was no manifest at all — then rendering uses viewSpecs.
    */
   boardCards: BoardCard[];
-  /** Терминальная ошибка: шаг error, ошибка подписки или статус рана. */
+  /** Terminal error: error step, subscription error, or run status. */
   errorMessage: string | undefined;
-  /** Сырой статус рана Trigger.dev (для отладочной подписи). */
+  /** Raw Trigger.dev run status (for debug caption). */
   runStatus: string | undefined;
 };
 
-/** Терминальные статусы рана Trigger.dev, означающие неудачу. */
+/** Terminal Trigger.dev run statuses meaning failure. */
 const FAILED_STATUSES = new Set([
   "FAILED",
   "CRASHED",
@@ -130,18 +130,17 @@ function parseSteps(raw: unknown): RunStep[] {
   return steps;
 }
 
-/** Заголовок внеплановой карточки: verdict особый — в спеке нет поля title. */
+/** Title for an unplanned card: verdict is special — the spec has no title field. */
 function specBoardTitle(spec: ViewSpec, verdictTitle: string): string {
   return spec.kind === "verdict" ? verdictTitle : spec.title;
 }
 
 /**
- * Собирает boardCards: манифест board_planned (порядок сохраняется) со
- * статусом каждой карточки, обновлённым по card_ready/card_failed с её
- * cardId. card_ready/card_failed без совпадения в манифесте (или когда
- * манифеста не было вовсе) не теряются — card_ready уходит в хвост как
- * готовая внеплановая карточка, card_failed без пары в манифесте отбрасывается
- * (её скелету всё равно неоткуда взяться).
+ * Builds boardCards: board_planned manifest (order preserved) with each card's
+ * status updated from card_ready/card_failed with its cardId. card_ready/card_failed
+ * without a manifest match (or when there was no manifest at all) are not lost —
+ * card_ready goes to the tail as a ready unplanned card, card_failed without a
+ * manifest pair is dropped (its skeleton has nowhere to come from).
  */
 function computeBoardCards(steps: RunStep[], verdictTitle: string): BoardCard[] {
   const plan = steps.find((s) => s.step === "board_planned");
@@ -206,7 +205,7 @@ export function useInvestigationRun(
     enabled,
   });
 
-  // Поллинг активен, пока ран не терминален ни по одному из источников.
+  // Polling stays active until the run is terminal from either source.
   const realtimeSteps = useMemo(() => parseSteps(run?.metadata?.steps), [run]);
   const realtimeTerminal =
     (run?.status !== undefined &&
@@ -215,7 +214,7 @@ export function useInvestigationRun(
   const polled = usePolledRun(runId, enabled && !realtimeTerminal);
 
   return useMemo<InvestigationRunState>(() => {
-    // Самый информативный источник: у кого больше валидных шагов, тот и прав.
+    // Most informative source wins: whoever has more valid steps.
     const polledSteps = parseSteps(polled?.metadata?.steps);
     const usePolled = polledSteps.length > realtimeSteps.length;
     const steps = usePolled ? polledSteps : realtimeSteps;
@@ -223,8 +222,8 @@ export function useInvestigationRun(
     const output = run?.output ?? polled?.output ?? undefined;
     const lastStep = steps.at(-1);
 
-    // Прогрессивная загрузка: карточки появляются по мере card_ready, не
-    // дожидаясь done. done/output — фоллбек (старые раны, потерянный стрим).
+    // Progressive loading: cards appear as card_ready arrives, without
+    // waiting for done. done/output — fallback (older runs, lost stream).
     const readySpecs = steps
       .filter((s) => s.step === "card_ready")
       .map((s) => s.viewSpec);

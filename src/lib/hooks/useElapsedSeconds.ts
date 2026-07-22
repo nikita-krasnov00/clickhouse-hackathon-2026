@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Секундомер карточки расследования: тикает раз в секунду, пока active,
- * и замирает на последнем значении, когда ран завершился. LLM думает
- * 5–30 с — видимый счётчик превращает ожидание в часть зрелища.
+ * Investigation card stopwatch: ticks once per second while active,
+ * and freezes at the last value when the run completes. LLM thinking takes
+ * 5–30 s — a visible counter turns waiting into part of the experience.
  */
 import { useEffect, useState } from "react";
 
@@ -12,8 +12,8 @@ export function useElapsedSeconds(startMs: number, active: boolean): number {
 
   useEffect(() => {
     if (!active) return;
-    // Карточка монтируется уже активной (askedAt ≈ mount), стартовое значение
-    // now из useState актуально — синхронный setState в эффекте не нужен.
+    // Card mounts already active (askedAt ≈ mount), initial `now` from useState
+    // is current — no synchronous setState in the effect needed.
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [active]);

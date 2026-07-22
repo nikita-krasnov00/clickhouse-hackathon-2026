@@ -1,7 +1,7 @@
 /**
- * Гейт аутентификации на всё приложение (proxy — бывший middleware Next).
- * Без сессии: страницы → редирект на /login с возвратом, API → 401 JSON.
- * Открыты только /login, роуты NextAuth (/api/auth/*) и статика — см. matcher.
+ * Authentication gate for the whole app (proxy — former Next middleware).
+ * Without a session: pages → redirect to /login with return URL, API → 401 JSON.
+ * Only /login, NextAuth routes (/api/auth/*), and static assets are open — see matcher.
  */
 import type {
   NextFetchEvent,
@@ -13,14 +13,14 @@ import { auth } from "@/auth";
 import { apiMessage } from "@/lib/i18n/api-messages";
 import { LOCALE_COOKIE, negotiateLocale } from "@/lib/i18n/locale";
 
-// Обёртка auth() читает JWT-cookie и кладёт сессию в req.auth.
-// Три обхода поверх канонного `export default auth(…)` (next-auth beta.32,
-// версия запинена):
-// 1) Next 16 принимает только статически видимую функцию proxy/default;
-// 2) при ленивом NextAuth(() => …) auth(fn) в рантайме отдаёт
-//    Promise<middleware>, хотя типы обещают функцию — нужен await;
-// 3) TS матчит вызов на перегрузку route-handler'а — приводим к
-//    фактическому Promise<NextMiddleware>.
+// The auth() wrapper reads the JWT cookie and puts the session in req.auth.
+// Three workarounds on top of the canonical `export default auth(…)` (next-auth beta.32,
+// pinned version):
+// 1) Next 16 accepts only a statically visible proxy/default function;
+// 2) with lazy NextAuth(() => …), auth(fn) returns Promise<middleware> at runtime
+//    although types promise a function — await is required;
+// 3) TS matches the call to the route-handler overload — cast to the actual
+//    Promise<NextMiddleware>.
 const gate = auth((req) => {
   if (req.auth) return NextResponse.next();
 

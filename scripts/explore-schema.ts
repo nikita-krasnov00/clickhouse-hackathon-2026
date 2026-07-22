@@ -1,8 +1,8 @@
 /**
- * B2 живьём без Trigger: `npm run explore:schema`.
- * Динамическое обнаружение таблиц под agent_ro и живой сбор контекста схемы.
- * Персистентного кэша нет — скрипт показывает ровно то, что увидит агент
- * на ближайшем ране, и меряет, во что это обходится по времени.
+ * B2 live without Trigger: `npm run explore:schema`.
+ * Dynamic table discovery under agent_ro and live schema context collection.
+ * No persistent cache — the script shows exactly what the agent will see on
+ * the next run, and measures how long that costs.
  */
 import { runExploreSchema } from "../src/lib/agent/explore";
 
@@ -13,26 +13,26 @@ async function main() {
 
   for (const ctx of contexts) {
     console.log(`\n=== ${ctx.table}`);
-    console.log(`  строк: ${ctx.rowCount.toLocaleString("ru-RU")}`);
+    console.log(`  rows: ${ctx.rowCount.toLocaleString("ru-RU")}`);
     console.log(
       `  ${ctx.dateColumn}: ${ctx.dateRange.min} … ${ctx.dateRange.max}`,
     );
-    console.log(`  колонок: ${ctx.columns.length}`);
+    console.log(`  columns: ${ctx.columns.length}`);
     for (const key of ctx.keyColumns) {
       const top3 = key.top
         .slice(0, 3)
         .map((t) => `${t.v} (${t.n})`)
         .join(", ");
       console.log(
-        `  ${key.column}: uniq=${key.cardinality}, топ-${key.top.length}: ${top3}, …`,
+        `  ${key.column}: uniq=${key.cardinality}, top-${key.top.length}: ${top3}, …`,
       );
     }
-    console.log(`  сэмплов: ${ctx.sampleRows.length}`);
-    console.log(`  размер JSON-контекста: ${JSON.stringify(ctx).length} байт`);
+    console.log(`  samples: ${ctx.sampleRows.length}`);
+    console.log(`  JSON context size: ${JSON.stringify(ctx).length} bytes`);
   }
 
   console.log(
-    `\nЖивое исследование: ${contexts.length} таблиц(ы) за ${elapsedMs} мс — столько заплатит ран без тёплой мемоизации`,
+    `\nLive exploration: ${contexts.length} table(s) in ${elapsedMs} ms — what a run pays without warm memoization`,
   );
   console.log("\nexplore:schema OK");
 }

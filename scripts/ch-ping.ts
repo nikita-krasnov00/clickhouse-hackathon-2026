@@ -1,6 +1,6 @@
 /**
- * Смоук-тест подключения к ClickHouse под agent_ro: `npm run ch:ping`.
- * Читает env из .env (флаг --env-file в npm-скрипте).
+ * ClickHouse connection smoke test under agent_ro: `npm run ch:ping`.
+ * Reads env from .env (--env-file flag in the npm script).
  */
 import { createReadonlyClient } from "../src/lib/clickhouse";
 
@@ -14,7 +14,7 @@ async function main() {
     const rows = await rs.json<{ ok: number; version: string; user: string }>();
     const row = rows[0];
     if (!row || row.ok !== 1) {
-      throw new Error(`неожиданный ответ: ${JSON.stringify(rows)}`);
+      throw new Error(`unexpected response: ${JSON.stringify(rows)}`);
     }
     console.log(
       `ch:ping OK — ClickHouse ${row.version}, user=${row.user}, SELECT 1 → ${row.ok}`,

@@ -2,20 +2,20 @@ import { createClient, type ClickHouseClient } from "@clickhouse/client";
 import { config } from "@/lib/config";
 
 /**
- * Фабрики ClickHouse-клиентов (B1).
+ * ClickHouse client factories (B1).
  *
- * Два юзера с разными правами (создаёт трек A, задача A1):
- *  - `agent_ro`      — read-only: SELECT по всем базам данных, выданным
- *                      грантами (github, tpcds, …). Все запросы агента ходят
- *                      только под ним; гранты = скоуп агента.
- *  - `agent_scratch` — запись в базу `scratch`: temp tables с TTL,
- *                      операционный лог LLM.
+ * Two users with different permissions (created by track A, task A1):
+ *  - `agent_ro`      — read-only: SELECT on all databases granted
+ *                      (github, tpcds, …). All agent queries run
+ *                      under this user; grants = agent scope.
+ *  - `agent_scratch` — write access to the `scratch` database: temp tables with TTL,
+ *                      operational LLM log.
  *
- * Значения — из конфигурации проекта (src/lib/config.ts, источник .env):
- * URL и креды валидируются лениво при первом создании клиента.
+ * Values come from project config (src/lib/config.ts, sourced from .env):
+ * URL and credentials are validated lazily on first client creation.
  */
 
-/** Read-only клиент (agent_ro) — все SQL-запросы агента. */
+/** Read-only client (agent_ro) — all agent SQL queries. */
 export function createReadonlyClient(): ClickHouseClient {
   const { url, readonly } = config.clickhouse;
   return createClient({
@@ -24,13 +24,13 @@ export function createReadonlyClient(): ClickHouseClient {
     password: readonly.password,
     request_timeout: 30_000,
     clickhouse_settings: {
-      // Страховка на клиенте; серверные лимиты для agent_ro задаёт трек A (A5).
+      // Client-side safeguard; server limits for agent_ro are set by track A (A5).
       max_execution_time: 30,
     },
   });
 }
 
-/** Scratch-клиент (agent_scratch) — temp tables и кэш схемы в базе scratch. */
+/** Scratch client (agent_scratch) — temp tables and schema cache in the scratch database. */
 export function createScratchClient(): ClickHouseClient {
   const { url, scratch } = config.clickhouse;
   return createClient({

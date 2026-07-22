@@ -1,25 +1,25 @@
 /**
- * E2E параллельных дочерних ранов: `npx tsx --env-file=.env scripts/investigate-parallel-e2e.ts`.
+ * E2E parallel child runs: `npx tsx --env-file=.env scripts/investigate-parallel-e2e.ts`.
  *
- * Требует запущенный dev-воркер (`npx trigger.dev@latest dev`) и TRIGGER_SECRET_KEY
- * в .env. Триггерит ран investigate через src/lib/trigger-api.ts (тот же путь,
- * что /api/ask), поллит runs.retrieve до терминального статуса и печатает
- * metadata.steps по мере появления.
+ * Requires a running dev worker (`npx trigger.dev@latest dev`) and TRIGGER_SECRET_KEY
+ * in .env. Triggers an investigate run via src/lib/trigger-api.ts (same path as
+ * /api/ask), polls runs.retrieve until a terminal status, and prints
+ * metadata.steps as they appear.
  *
- * Проверки:
- *   - ран COMPLETED;
- *   - в output ≥ 2 viewSpecs;
- *   - в metadata РОДИТЕЛЯ есть шаги детей: executing и card_ready
- *     (дети пишут их через metadata.parent.append — фронт ничего не меняет).
+ * Checks:
+ *   - run COMPLETED;
+ *   - output has ≥ 2 viewSpecs;
+ *   - parent metadata has child steps: executing and card_ready
+ *     (children write them via metadata.parent.append — frontend unchanged).
  */
 import { runs } from "@trigger.dev/sdk";
 import { triggerInvestigate } from "../src/lib/trigger-api";
 import type { RunStep } from "../src/lib/contracts";
 
-// Нейтральный, заведомо отвечаемый вопрос с ДВУМЯ дополняющими углами (топ +
-// тренд), чтобы триаж спланировал ≥ 2 карточки — иначе проверка ниже
-// (specCount < 2) валится не из-за бага, а из-за того, что «простой лукап»
-// триаж по своим же правилам сводит к одной карточке.
+// Neutral, known-answerable question with TWO complementary angles (top +
+// trend) so triage plans ≥ 2 cards — otherwise the check below
+// (specCount < 2) fails not because of a bug but because triage rules
+// collapse a "simple lookup" to a single card.
 const QUESTION =
   process.argv[2] ?? "top repos by stars in March 2024, and how did star activity trend across the month?";
 
@@ -44,7 +44,7 @@ function printStep(i: number, step: RunStep) {
       console.log(`  [${at}] #${i} executing${step.message ? ` (${step.message})` : ""}: ${short(step.sqlPreview ?? "")}`);
       break;
     case "healing":
-      console.log(`  [${at}] #${i} healing (попытка ${step.attempt}): ${short(step.error ?? "")}`);
+      console.log(`  [${at}] #${i} healing (attempt ${step.attempt}): ${short(step.error ?? "")}`);
       break;
     case "card_ready":
       console.log(`  [${at}] #${i} card_ready [${step.viewSpec.kind}]: ${step.message ?? ""}`);
@@ -58,7 +58,7 @@ function printStep(i: number, step: RunStep) {
 }
 
 async function main() {
-  console.log(`=== Вопрос: ${QUESTION}`);
+  console.log(`=== Question: ${QUESTION}`);
   const { runId } = await triggerInvestigate({ question: QUESTION });
   console.log(`runId: ${runId}`);
 
@@ -71,27 +71,27 @@ async function main() {
       printStep(printed + 1, steps[printed]);
     }
     if (TERMINAL.has(run.status)) {
-      console.log(`\nстатус: ${run.status} за ${Math.round((Date.now() - started) / 1000)} c`);
+      console.log(`\nstatus: ${run.status} in ${Math.round((Date.now() - started) / 1000)} s`);
 
-      // -- Проверки ----------------------------------------------------------
+      // -- Checks ----------------------------------------------------------
       const problems: string[] = [];
       if (run.status !== "COMPLETED") {
-        problems.push(`ожидался COMPLETED, получен ${run.status}`);
+        problems.push(`expected COMPLETED, got ${run.status}`);
       }
       const output = run.output as { viewSpecs?: unknown[] } | undefined;
       const specCount = output?.viewSpecs?.length ?? 0;
       if (specCount < 2) {
-        problems.push(`ожидалось ≥2 viewSpecs в output, получено ${specCount}`);
+        problems.push(`expected ≥2 viewSpecs in output, got ${specCount}`);
       }
       const executing = steps.filter((s) => s.step === "executing").length;
       const cardReady = steps.filter((s) => s.step === "card_ready").length;
       if (executing < 1 || cardReady < 1) {
         problems.push(
-          `в metadata родителя нет шагов детей: executing=${executing}, card_ready=${cardReady}`,
+          `parent metadata missing child steps: executing=${executing}, card_ready=${cardReady}`,
         );
       }
       console.log(
-        `viewSpecs в output: ${specCount}; шагов executing: ${executing}, card_ready: ${cardReady}, всего шагов: ${steps.length}`,
+        `viewSpecs in output: ${specCount}; executing steps: ${executing}, card_ready: ${cardReady}, total steps: ${steps.length}`,
       );
 
       if (problems.length > 0) {
@@ -102,7 +102,7 @@ async function main() {
       return;
     }
     if (Date.now() - started > 5 * 60_000) {
-      console.error(`\ninvestigate-parallel-e2e FAILED: ран не завершился за 5 минут (статус ${run.status})`);
+      console.error(`\ninvestigate-parallel-e2e FAILED: run did not finish within 5 minutes (status ${run.status})`);
       process.exit(1);
     }
     await new Promise((r) => setTimeout(r, 2000));

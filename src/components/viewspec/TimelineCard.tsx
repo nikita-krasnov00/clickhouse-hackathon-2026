@@ -1,20 +1,20 @@
 "use client";
 
 /**
- * Timeline (C4) — линии серий по времени, зона аномалии, кликабельные точки,
- * навигация по временной шкале.
+ * Timeline (C4) — time series lines, anomaly zone, clickable points,
+ * time axis navigation.
  *
- * Рукописный SVG: 2px линии, точки с 2px кольцом цвета поверхности,
- * hairline-сетка, полупрозрачная заливка anomalyWindow (статусный critical),
- * hover-тултип и увеличенный хит-таргет точки (r=14 против видимых r=4).
+ * Hand-written SVG: 2px lines, points with 2px surface-colored ring,
+ * hairline grid, semi-transparent anomalyWindow fill (critical status),
+ * hover tooltip and enlarged point hit target (r=14 vs visible r=4).
  *
- * Зум и панорама:
- *   - протяжка мышью по графику — выделение диапазона → зум в него;
- *   - pinch трекпада / Ctrl+колесо — зум вокруг курсора;
- *   - Shift+колесо или горизонтальный свайп трекпада — панорама (в зуме);
- *   - двойной клик или кнопка «сброс» — исходный масштаб.
- * Обычная вертикальная прокрутка НЕ перехватывается — лента скроллится как
- * обычно. Ось Y пересчитывается под видимые точки.
+ * Zoom and pan:
+ *   - mouse drag on chart — range selection → zoom into it;
+ *   - trackpad pinch / Ctrl+wheel — zoom around cursor;
+ *   - Shift+wheel or horizontal trackpad swipe — pan (when zoomed);
+ *   - double-click or reset button — original scale.
+ * Normal vertical scroll is NOT captured — the feed scrolls as usual.
+ * Y axis is recomputed for visible points.
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -27,9 +27,9 @@ const VB_H = 280;
 const M = { top: 18, right: 16, bottom: 30, left: 48 };
 const PLOT_W = VB_W - M.left - M.right;
 
-/** Порог протяжки (в координатах viewBox), после которого клик становится brush. */
+/** Drag threshold (viewBox coords) after which click becomes brush. */
 const BRUSH_THRESHOLD = 6;
-/** Минимальное окно зума — не даём схлопнуть диапазон в точку. */
+/** Minimum zoom window — don't collapse range to a point. */
 const MIN_SPAN_MS = 60_000;
 
 const SERIES_COLORS = [
@@ -40,21 +40,21 @@ const SERIES_COLORS = [
 ];
 
 /**
- * Палитра честно различает не больше стольких серий (валидатор dataviz: 8 hue
- * на нашей поверхности уже уходят в CVD-floor). Больше серий — это, как правило,
- * двумерный паттерн (час × день), которому место в heatmap, а не в timeline.
+ * Palette honestly distinguishes at most this many series (dataviz validator: 8 hues
+ * on our surface already hit CVD floor). More series — usually a two-dimensional
+ * pattern (hour × day), which belongs in heatmap, not timeline.
  */
 const MAX_SERIES = SERIES_COLORS.length;
 
 /**
- * Бюджет ВИДИМЫХ маркеров-точек: пока в окне их не больше — рисуем и точки, и
- * клик-таргеты; больше (десятки-сотни на плотном ряду) — только линии, иначе
- * маркеры сливаются в облако и прячут сами линии. При зуме окно сужается,
- * точек в нём становится мало — маркеры и клики возвращаются автоматически.
+ * Budget of VISIBLE point markers: while the window has no more — draw both points
+ * and click targets; more (dozens-hundreds on a dense series) — lines only, otherwise
+ * markers merge into a cloud and hide the lines. On zoom the window narrows,
+ * fewer points — markers and clicks return automatically.
  */
 const MARKER_BUDGET = 60;
 
-/** «Красивый» шаг оси значений: 1/2/5 × 10^n. */
+/** "Nice" value axis step: 1/2/5 × 10^n. */
 function niceStep(rough: number): number {
   const pow = 10 ** Math.floor(Math.log10(Math.max(rough, 1e-9)));
   const unit = rough / pow;
@@ -91,7 +91,7 @@ export function TimelineCard({
     minute: "2-digit",
   });
   const [hover, setHover] = useState<Hover>(null);
-  /** Видимое окно времени; null — весь диапазон данных. */
+  /** Visible time window; null — full data range. */
   const [view, setView] = useState<View | null>(null);
   const [brush, setBrush] = useState<{ x0: number; x1: number } | null>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; brushing: boolean } | null>(null);
@@ -101,9 +101,9 @@ export function TimelineCard({
   const pointTarget = findClickTarget(spec.clicks, "point");
   const clickable = Boolean(pointTarget && onClickContext);
 
-  // Серий не больше палитры: избыток НЕ раскрашиваем в повторяющиеся цвета
-  // (это вводило бы в заблуждение — 03–06 и 18–21 одним цветом), а показываем
-  // крупнейшие по объёму, честно подписав, сколько скрыто.
+  // No more series than palette: excess is NOT colored with repeating colors
+  // (that would mislead — 03–06 and 18–21 same color), show largest by volume,
+  // honestly noting how many are hidden.
   const { series, hiddenSeries } = useMemo(() => {
     if (spec.series.length <= MAX_SERIES) {
       return { series: spec.series, hiddenSeries: 0 };
@@ -117,7 +117,7 @@ export function TimelineCard({
     };
   }, [spec.series]);
 
-  // Полный диапазон данных — от него считаются границы зума и панорамы.
+  // Full data range — zoom and pan bounds computed from it.
   const domain = useMemo(() => {
     const all = series.flatMap((s) => s.points.map((p) => Date.parse(p.t)));
     if (all.length === 0) return null;
@@ -138,7 +138,7 @@ export function TimelineCard({
     const parsed = series.map((s) =>
       s.points.map((p) => ({ ...p, ts: Date.parse(p.t) })),
     );
-    // Ось Y — под видимые точки (при зуме график «дышит» по вертикали).
+    // Y axis — for visible points (chart "breathes" vertically on zoom).
     const visible = parsed.flat().filter((p) => p.ts >= tMin && p.ts <= tMax);
     const forScale = visible.length > 0 ? visible : parsed.flat();
     const vMax = Math.max(...forScale.map((p) => p.v), 1);
@@ -148,7 +148,7 @@ export function TimelineCard({
     const x = (ts: number) => M.left + ((ts - tMin) / (tMax - tMin)) * PLOT_W;
     const y = (v: number) =>
       VB_H - M.bottom - (v / yMax) * (VB_H - M.top - M.bottom);
-    /** Обратное преобразование: координата viewBox → таймстамп. */
+    /** Inverse transform: viewBox coordinate → timestamp. */
     const tAt = (vx: number) => tMin + ((vx - M.left) / PLOT_W) * (tMax - tMin);
 
     const yTicks: number[] = [];
@@ -162,15 +162,15 @@ export function TimelineCard({
     const fmtT = (ts: number) =>
       spanDays < 3 ? timeFmt.format(ts) : dayFmt.format(ts);
 
-    // Плотность видимого окна решает, рисовать ли точки-маркеры (см. MARKER_BUDGET).
+    // Visible window density decides whether to draw point markers (see MARKER_BUDGET).
     const showMarkers = visible.length <= MARKER_BUDGET;
 
     return { tMin, tMax, yMax, parsed, x, y, tAt, yTicks, xTicks, fmtT, showMarkers };
   }, [series, domain, view, dayFmt, timeFmt]);
 
-  // ---- зум/панорама -------------------------------------------------------
+  // ---- zoom/pan -------------------------------------------------------
 
-  /** Устанавливает окно с клампом в полный диапазон; совпало с полным — сброс. */
+  /** Sets window clamped to full range; matches full range — reset. */
   const applyView = (min: number, max: number) => {
     if (!domain) return;
     const span = Math.max(max - min, MIN_SPAN_MS);
@@ -188,23 +188,23 @@ export function TimelineCard({
     else setView({ min: lo, max: hi });
   };
 
-  /** Координата события мыши → координата viewBox по X. */
+  /** Mouse event coordinate → viewBox X coordinate. */
   const vbX = (clientX: number): number => {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return 0;
     return ((clientX - rect.left) / rect.width) * VB_W;
   };
 
-  // Колесо: pinch/Ctrl — зум вокруг курсора; Shift или горизонтальный свайп —
-  // панорама. Обычный вертикальный скролл отдаём странице. Нативный listener
-  // с passive:false — React вешает wheel пассивно, preventDefault не сработал бы.
+  // Wheel: pinch/Ctrl — zoom around cursor; Shift or horizontal swipe —
+  // pan. Normal vertical scroll goes to the page. Native listener
+  // with passive:false — React attaches wheel passively, preventDefault wouldn't work.
   const wheelRef = useRef<(e: WheelEvent) => void>(() => {});
   const handleWheel = (e: WheelEvent) => {
     if (!layout || !domain) return;
     const { tMin, tMax, tAt } = layout;
     const span = tMax - tMin;
     const zooming = e.ctrlKey || e.metaKey;
-    // Панорама: Shift+колесо либо горизонтальный свайп трекпада.
+    // Pan: Shift+wheel or horizontal trackpad swipe.
     let panDelta = 0;
     if (!zooming) {
       if (e.shiftKey) panDelta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
@@ -213,14 +213,14 @@ export function TimelineCard({
 
     if (zooming) {
       e.preventDefault();
-      const factor = Math.exp(e.deltaY * 0.002); // deltaY<0 (pinch-out) — зум внутрь
+      const factor = Math.exp(e.deltaY * 0.002); // deltaY<0 (pinch-out) — zoom in
       const anchor = Math.min(Math.max(tAt(vbX(e.clientX)), tMin), tMax);
       const newSpan = Math.min(Math.max(span * factor, MIN_SPAN_MS), domain.max - domain.min);
       const ratio = (anchor - tMin) / span;
       applyView(anchor - newSpan * ratio, anchor + newSpan * (1 - ratio));
     } else if (panDelta !== 0 && view) {
       e.preventDefault();
-      // Пиксели курсора → время: доля от CSS-ширины области графика.
+      // Cursor pixels → time: fraction of plot CSS width.
       const rect = svgRef.current?.getBoundingClientRect();
       const plotCssW = (rect?.width ?? VB_W) * (PLOT_W / VB_W);
       const shift = (panDelta / plotCssW) * span;
@@ -240,7 +240,7 @@ export function TimelineCard({
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
-  // Протяжка: до порога — обычный клик по точке; после — brush-выделение.
+  // Drag: below threshold — normal point click; after — brush selection.
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.button !== 0 || !layout) return;
     dragRef.current = { pointerId: e.pointerId, startX: vbX(e.clientX), brushing: false };
@@ -252,7 +252,7 @@ export function TimelineCard({
     const x = vbX(e.clientX);
     if (!drag.brushing && Math.abs(x - drag.startX) > BRUSH_THRESHOLD) {
       drag.brushing = true;
-      // Захват указателя только с началом brush — иначе сломались бы клики точек.
+      // Pointer capture only when brush starts — otherwise point clicks break.
       svgRef.current?.setPointerCapture(drag.pointerId);
       setHover(null);
     }
@@ -284,7 +284,7 @@ export function TimelineCard({
     ? (() => {
         const a0 = Date.parse(spec.anomalyWindow[0]);
         const a1 = Date.parse(spec.anomalyWindow[1]);
-        if (a1 < tMin || a0 > tMax) return null; // окно целиком вне зума
+        if (a1 < tMin || a0 > tMax) return null; // window entirely outside zoom
         return {
           x0: Math.max(x(a0), M.left),
           x1: Math.min(x(a1), VB_W - M.right),
@@ -312,7 +312,7 @@ export function TimelineCard({
 
   return (
     <div>
-      {/* Легенда — только при ≥2 сериях (одна серия названа заголовком). */}
+      {/* Legend — only with ≥2 series (single series named by title). */}
       {series.length >= 2 && (
         <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 px-1">
           {series.map((s, i) => (
@@ -352,7 +352,7 @@ export function TimelineCard({
           onDoubleClick={() => setView(null)}
         >
           <defs>
-            {/* Клип области графика: при зуме линии не вылезают за оси. */}
+            {/* Plot area clip: on zoom lines don't spill past axes. */}
             <clipPath id={clipId}>
               <rect
                 x={M.left}
@@ -363,7 +363,7 @@ export function TimelineCard({
             </clipPath>
           </defs>
 
-          {/* Сетка значений — hairline, рецессивная */}
+          {/* Value grid — hairline, recessive */}
           {yTicks.map((v) => (
             <g key={v}>
               <line
@@ -386,7 +386,7 @@ export function TimelineCard({
             </g>
           ))}
 
-          {/* Зона аномалии — полупрозрачная подсветка диапазона */}
+          {/* Anomaly zone — semi-transparent range highlight */}
           {anomaly && (
             <g>
               <rect
@@ -424,7 +424,7 @@ export function TimelineCard({
             </g>
           )}
 
-          {/* Ось времени */}
+          {/* Time axis */}
           {xTicks.map((ts, i) => (
             <text
               key={i}
@@ -438,7 +438,7 @@ export function TimelineCard({
             </text>
           ))}
 
-          {/* Линии серий: 2px, круглые стыки; клип по области графика */}
+          {/* Series lines: 2px, round joins; clipped to plot area */}
           <g clipPath={`url(#${clipId})`}>
             {parsed.map((points, si) => {
               const color = SERIES_COLORS[si % SERIES_COLORS.length];
@@ -459,10 +459,10 @@ export function TimelineCard({
             })}
           </g>
 
-          {/* Точки: видимые r=4 с кольцом поверхности + хит-таргет r=14.
-              Только точки видимого окна и только когда их не слишком много
-              (showMarkers) — иначе плотный ряд превращается в облако и прячет
-              линии; на зуме окно сужается и точки/клики возвращаются. */}
+          {/* Points: visible r=4 with surface ring + hit target r=14.
+              Only points in visible window and only when not too many
+              (showMarkers) — otherwise dense series becomes a cloud hiding
+              lines; on zoom window narrows and points/clicks return. */}
           {showMarkers &&
             parsed.map((points, si) => {
             const color = SERIES_COLORS[si % SERIES_COLORS.length];
@@ -518,7 +518,7 @@ export function TimelineCard({
             });
           })}
 
-          {/* Brush-выделение диапазона будущего зума */}
+          {/* Brush selection for upcoming zoom range */}
           {brush && (
             <g pointerEvents="none">
               <rect
@@ -549,7 +549,7 @@ export function TimelineCard({
           )}
         </svg>
 
-        {/* Тултип: значение — главное, подпись — вторичная */}
+        {/* Tooltip: value — primary, label — secondary */}
         {hover && hoveredPoint && !brush && (
           <div
             className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-background px-2.5 py-1.5 shadow-lg"

@@ -1,12 +1,12 @@
 /**
- * B7 — POST /api/ask: вопрос (или «почему?» с ClickContext) → агентный ран.
+ * B7 — POST /api/ask: question (or "why?" with ClickContext) → agent run.
  *
- * Тело: askRequestSchema { question, context? } — прокидывается в таску
- * investigate как есть (вход таски совместим по контракту).
- * Ответ 200: строго askResponseSchema { runId, publicAccessToken } — токен
- * read-only на этот один ран, фронт подписывается через useRealtimeRun (C2).
+ * Body: askRequestSchema { question, context? } — forwarded to the
+ * investigate task as-is (task input is contract-compatible).
+ * Response 200: strictly askResponseSchema { runId, publicAccessToken } — read-only
+ * token for this one run; the frontend subscribes via useRealtimeRun (C2).
  *
- * Ошибки: 400 — мусор на входе (с zod-деталями), 502 — Trigger.dev API недоступен.
+ * Errors: 400 — invalid input (with zod details), 502 — Trigger.dev API unavailable.
  */
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
@@ -15,7 +15,7 @@ import { triggerInvestigate, TriggerApiError } from "@/lib/trigger-api";
 import { apiMessage } from "@/lib/i18n/api-messages";
 import { LOCALE_COOKIE, negotiateLocale } from "@/lib/i18n/locale";
 
-// Node.js runtime: SDK Trigger.dev ходит наружу с TRIGGER_SECRET_KEY из env.
+// Node.js runtime: Trigger.dev SDK calls out with TRIGGER_SECRET_KEY from env.
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
 
   try {
     const result = await triggerInvestigate(parsed.data);
-    // parse — страховка: наружу уходит строго контракт askResponseSchema.
+    // parse — safety net: only askResponseSchema leaves the wire.
     return NextResponse.json(askResponseSchema.parse(result));
   } catch (err) {
     const message =

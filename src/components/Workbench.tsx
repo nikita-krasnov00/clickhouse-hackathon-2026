@@ -1,18 +1,18 @@
 "use client";
 
 /**
- * C2/C6 — живое рабочее место: композер + лента карточек расследований.
+ * C2/C6 — live workbench: composer + feed of investigation cards.
  *
- * Вопрос (Enter или кнопка) → POST /api/ask → карточка InvestigationCard с
- * Realtime-подпиской. Клик по элементу карточки (C6) — всегда новый ран
- * агента (action 'why') с ClickContext: датасет-специфичных дриллов нет,
- * следующий слой раскапывает сам агент. Клик по чипу clarify/impossible
- * внутри карточки (C2) — тоже новый ран, но обычным вопросом без контекста.
+ * Question (Enter or button) → POST /api/ask → InvestigationCard with
+ * Realtime subscription. Click on a card element (C6) — always a new agent run
+ * (action 'why') with ClickContext: no dataset-specific drills; the next layer
+ * is uncovered by the agent itself. Click on a clarify/impossible chip inside
+ * the card (C2) — also a new run, but as a plain question without context.
  *
- * Пресеты композера — не хардкод: на маунте GET /api/suggest подтягивает
- * вопросы, сгенерированные по живому каталогу таблиц ClickHouse. Пусто или
- * ошибка — блок пресетов просто не рисуется (suggestResponseSchema валиден и
- * с пустым массивом).
+ * Composer presets — not hardcoded: on mount GET /api/suggest fetches questions
+ * generated from the live ClickHouse table catalog. Empty or error — preset
+ * block is simply not rendered (suggestResponseSchema is valid with an empty
+ * array too).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -28,9 +28,9 @@ import {
 } from "@/components/InvestigationCard";
 
 /**
- * Пресеты /api/suggest: null — ещё грузятся, [] — пусто/ошибка (блок скрыт).
- * Пресеты генерятся на языке интерфейса, поэтому смена локали — новый запрос
- * (сервер держит кэш по локали, так что повторное переключение мгновенно).
+ * /api/suggest presets: null — still loading, [] — empty/error (block hidden).
+ * Presets are generated in the interface language, so a locale switch issues a
+ * new request (the server caches per locale, so switching back is instant).
  */
 function usePresetQuestions(): string[] | null {
   const locale = useLocale();
@@ -140,7 +140,7 @@ export function Workbench() {
     [t],
   );
 
-  /** C6: клик по элементу карточки — новый ран агента с контекстом клика. */
+  /** C6: click on a card element — new agent run with click context. */
   const handleClickContext = useCallback(
     (ctx: ClickContext, spec: ViewSpec) => {
       submit(whyQuestion(ctx, spec), ctx);
@@ -155,7 +155,7 @@ export function Workbench() {
 
   return (
     <>
-      {/* Композер */}
+      {/* Composer */}
       <form
         aria-label={t("composerAria")}
         className="flex items-center gap-2 rounded-xl border border-border bg-surface p-2 focus-within:border-accent/50"
@@ -183,7 +183,7 @@ export function Workbench() {
         </button>
       </form>
 
-      {/* Лента: новые карточки сверху. */}
+      {/* Feed: newest cards on top. */}
       <section
         aria-label={t("feedAria")}
         className="mt-4 flex flex-1 flex-col gap-3"
@@ -191,7 +191,7 @@ export function Workbench() {
         {runs.length === 0 && (
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="text-sm">{t("emptyIntro")}</p>
-            {/* Пресеты /api/suggest: пока грузится — skeleton-чипы; пусто/ошибка — блок скрыт. */}
+            {/* /api/suggest presets: skeleton chips while loading; empty/error — block hidden. */}
             {presets === null && (
               <>
                 <p className="mt-1.5 text-xs text-muted">{t("startWithExample")}</p>

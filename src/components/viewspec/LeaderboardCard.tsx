@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Leaderboard (C4) — таблица columns/rows: сортировка по клику на заголовок,
- * клик строки → ClickContext (selectionKeys = ключи колонок, null опускается).
- * null-значения рендерятся как «—»; числа — вправо, tabular-nums.
+ * Leaderboard (C4) — columns/rows table: sort on header click, row click →
+ * ClickContext (selectionKeys = column keys, null omitted).
+ * null values render as "—"; numbers — right-aligned, tabular-nums.
  */
 import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -15,7 +15,7 @@ type Sort = { key: string; dir: "asc" | "desc" } | null;
 
 function compareValues(a: Row[string], b: Row[string], locale: string): number {
   if (a === null && b === null) return 0;
-  if (a === null) return 1; // null — всегда вниз
+  if (a === null) return 1; // null — always at the bottom
   if (b === null) return -1;
   if (typeof a === "number" && typeof b === "number") return a - b;
   return String(a).localeCompare(String(b), locale);

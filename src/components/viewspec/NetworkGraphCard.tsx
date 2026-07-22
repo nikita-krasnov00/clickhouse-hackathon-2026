@@ -1,24 +1,23 @@
 "use client";
 
 /**
- * NetworkGraph (C5) — кульминация демо: кластер бот-аккаунтов вокруг репо.
+ * NetworkGraph (C5) — demo climax: bot account cluster around a repo.
  *
- * Рукописный SVG без зависимостей. Лейаут — детерминированная force-симуляция
- * (Fruchterman–Reingold, фиксированные итерации в useMemo): стартовые позиции
- * из хэша id (никакого Math.random → одинаковая картинка на каждый рендер и
- * без гидрационных расхождений), затем отталкивание всех пар, притяжение по
- * рёбрам (weight усиливает), гравитация к центру, финальная подгонка в кадр.
+ * Hand-written SVG without dependencies. Layout — deterministic force simulation
+ * (Fruchterman–Reingold, fixed iterations in useMemo): starting positions from
+ * id hash (no Math.random → same picture on every render and no hydration
+ * mismatches), then repulsion of all pairs, attraction along edges (weight
+ * strengthens), gravity to center, final fit to frame.
  *
- * Жёсткий cap maxNodes из спека: узлы сортируются по score (узлы без score —
- * структурные хабы, режутся последними), лишние отбрасываются с пометкой
- * «показаны топ-N».
+ * Hard maxNodes cap from spec: nodes sorted by score (nodes without score —
+ * structural hubs, cut last), excess dropped with "showing top-N" note.
  *
- * Цвет узла — аномальность: color-mix от нейтрального muted к статусному
- * critical по score; узлы без score (структурные хабы) — series-1. Идентичность
- * не только цветом: легенда + подпись + score в тултипе.
+ * Node color — anomaly: color-mix from neutral muted to critical status by
+ * score; nodes without score (structural hubs) — series-1. Identity not by
+ * color alone: legend + label + score in tooltip.
  *
- * Клик узла: в контракте у graph нет clicks[] (решение J1) — клик захардкожен
- * как action:'why' с selection { node: id }, ClickContext это уже позволяет.
+ * Node click: graph has no clicks[] in contract (J1 decision) — click
+ * hardcoded as action:'why' with selection { node: id }, ClickContext allows this.
  */
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -27,9 +26,9 @@ import { useNumberFormat } from "@/lib/i18n/formats";
 
 const VB_W = 640;
 const VB_H = 360;
-const PAD = 36; // поле подгонки: максимальный радиус + подписи хабов
+const PAD = 36; // fit margin: max radius + hub labels
 
-/** Детерминированный хэш строки → [0, 1). FNV-1a. */
+/** Deterministic string hash → [0, 1). FNV-1a. */
 function hash01(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -39,13 +38,13 @@ function hash01(s: string): number {
   return (h >>> 0) / 4294967296;
 }
 
-/** Радиус узла: size приоритетнее, иначе score; клампы держат кадр. */
+/** Node radius: size takes priority, else score; clamps keep frame stable. */
 function nodeRadius(n: GraphNode): number {
   if (n.size !== undefined) return Math.min(Math.max(3 + n.size * 0.55, 5), 22);
   return 6 + Math.min(Math.max(n.score ?? 0.3, 0), 1) * 8;
 }
 
-/** Цвет узла: без score — «структурный» series-1; со score — muted → critical. */
+/** Node color: without score — "structural" series-1; with score — muted → critical. */
 function nodeColor(n: GraphNode): string {
   if (n.score === undefined) return "var(--viz-series-1)";
   const pct = Math.round(Math.min(Math.max(n.score, 0), 1) * 100);
@@ -72,7 +71,7 @@ export function NetworkGraphCard({
   const layout = useMemo(() => {
     if (spec.nodes.length === 0) return null;
 
-    // --- Cap maxNodes: режем наименее подозрительных; хабы без score живут ---
+    // --- Cap maxNodes: cut least suspicious; hubs without score survive ---
     const prio = (n: GraphNode) => n.score ?? Number.POSITIVE_INFINITY;
     const sorted = [...spec.nodes].sort((a, b) =>
       prio(a) === prio(b) ? 0 : prio(b) - prio(a),
@@ -85,7 +84,7 @@ export function NetworkGraphCard({
       (e) => index.has(e.source) && index.has(e.target) && e.source !== e.target,
     );
 
-    // --- Детерминированная force-симуляция (Fruchterman–Reingold) ---
+    // --- Deterministic force simulation (Fruchterman–Reingold) ---
     const n = kept.length;
     const xs = new Float64Array(n);
     const ys = new Float64Array(n);
@@ -105,14 +104,14 @@ export function NetworkGraphCard({
       const temp = 1 + (VB_W / 9) * (1 - it / ITER);
       dx.fill(0);
       dy.fill(0);
-      // Отталкивание всех пар: f = k²/d
+      // Repulsion of all pairs: f = k²/d
       for (let i = 0; i < n; i++) {
         for (let j = i + 1; j < n; j++) {
           let ddx = xs[i] - xs[j];
           let ddy = ys[i] - ys[j];
           let d = Math.hypot(ddx, ddy);
           if (d < 0.01) {
-            // Совпавшие точки разводим детерминированно
+            // Separate coincident points deterministically
             ddx = ((i - j) % 3) + 0.1;
             ddy = ((i + j) % 3) - 0.1;
             d = Math.hypot(ddx, ddy);
@@ -124,7 +123,7 @@ export function NetworkGraphCard({
           dy[j] -= ddy * f;
         }
       }
-      // Притяжение по рёбрам: f = d/k, weight усиливает связь
+      // Attraction along edges: f = d/k, weight strengthens link
       for (const e of edges) {
         const a = index.get(e.source)!;
         const b = index.get(e.target)!;
@@ -138,7 +137,7 @@ export function NetworkGraphCard({
         dx[b] += (ddx / d) * f;
         dy[b] += (ddy / d) * f;
       }
-      // Гравитация к центру + применение с температурным капом
+      // Gravity to center + apply with temperature cap
       for (let i = 0; i < n; i++) {
         dx[i] += (VB_W / 2 - xs[i]) * 0.04;
         dy[i] += (VB_H / 2 - ys[i]) * 0.04;
@@ -151,7 +150,7 @@ export function NetworkGraphCard({
       }
     }
 
-    // --- Подгонка в кадр: равномерный масштаб + центрирование ---
+    // --- Fit to frame: uniform scale + centering ---
     let minX = Infinity,
       maxX = -Infinity,
       minY = Infinity,
@@ -175,7 +174,7 @@ export function NetworkGraphCard({
       r: nodeRadius(node),
     }));
     const byId = new Map(laid.map((l) => [l.node.id, l]));
-    // Крупные узлы рисуем первыми, чтобы мелкие не тонули под хабом
+    // Draw large nodes first so small ones don't sink under hubs
     const drawOrder = [...laid].sort((a, b) => b.r - a.r);
 
     const degree = new Map<string, number>();
@@ -207,7 +206,7 @@ export function NetworkGraphCard({
   }
 
   const fire = (node: GraphNode) => {
-    // Решение J1: у graph нет clicks[] — клик узла всегда action:'why'
+    // J1 decision: graph has no clicks[] — node click always action:'why'
     onClickContext?.({
       cardId,
       componentKind: "graph",
@@ -218,7 +217,7 @@ export function NetworkGraphCard({
 
   return (
     <div>
-      {/* Легенда: идентичность не только цветом */}
+      {/* Legend: identity not by color alone */}
       <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted">
         <span className="flex items-center gap-1.5">
           <span
@@ -248,7 +247,7 @@ export function NetworkGraphCard({
           role="img"
           aria-label={spec.title}
         >
-          {/* Рёбра: рецессивные, hover подсвечивает связи узла */}
+          {/* Edges: recessive, hover highlights node's links */}
           {edges.map((e, i) => {
             const a = byId.get(e.source)!;
             const b = byId.get(e.target)!;
@@ -269,7 +268,7 @@ export function NetworkGraphCard({
             );
           })}
 
-          {/* Узлы: 2px кольцо цвета поверхности, hover — подсветка соседей */}
+          {/* Nodes: 2px surface-colored ring, hover — neighbor highlight */}
           {drawOrder.map((l) => {
             const isHovered = hoverId === l.node.id;
             const dimmed = hoverId !== null && !neighborIds.has(l.node.id);
@@ -286,7 +285,7 @@ export function NetworkGraphCard({
                   strokeWidth={2}
                   pointerEvents="none"
                 />
-                {/* Прямые подписи — только структурные хабы (селективно) */}
+                {/* Direct labels — structural hubs only (selective) */}
                 {isHub && (
                   <text
                     x={l.x}
@@ -299,7 +298,7 @@ export function NetworkGraphCard({
                     {l.node.label}
                   </text>
                 )}
-                {/* Хит-таргет больше видимого узла */}
+                {/* Hit target larger than visible node */}
                 <circle
                   cx={l.x}
                   cy={l.y}
@@ -334,7 +333,7 @@ export function NetworkGraphCard({
           })}
         </svg>
 
-        {/* Тултип узла */}
+        {/* Node tooltip */}
         {hovered && (
           <div
             className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-background px-2.5 py-1.5 shadow-lg"

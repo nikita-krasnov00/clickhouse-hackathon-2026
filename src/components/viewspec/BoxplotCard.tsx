@@ -1,15 +1,14 @@
 "use client";
 
 /**
- * Boxplot — сравнение распределений метрики по группам.
+ * Boxplot — compare metric distributions across groups.
  *
- * Рукописный SVG в стиле ScatterCard/HistogramCard: горизонтальные боксы на
- * общей числовой оси. Бокс — q1..q3, жирная риска — медиана (акцент), усы —
- * lo..hi (конвенция SQL: p05/p95). Ось линейная; если значения строго
- * положительны и разлетаются на ≥ 2.3 порядка — автоматически log10 с
- * подписями реальных значений (как в scatter). Группы идут в порядке спека
- * (SQL сортирует по медиане). Клик по строке группы → ClickContext по
- * семантике ClickTarget on:'box'.
+ * Hand-written SVG in ScatterCard/HistogramCard style: horizontal boxes on a
+ * shared numeric axis. Box — q1..q3, bold tick — median (accent), whiskers —
+ * lo..hi (SQL convention: p05/p95). Linear axis; if values are strictly
+ * positive and span ≥ 2.3 orders of magnitude — auto log10 with real value
+ * labels (like scatter). Groups in spec order (SQL sorts by median). Group row
+ * click → ClickContext per ClickTarget on:'box' semantics.
  */
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -21,12 +20,12 @@ const VB_W = 640;
 const M = { top: 10, right: 16, bottom: 42, left: 122 };
 const ROW_H = 34;
 const BOX_H = 16;
-/** Порог авто-лога: max/min по всем значениям групп. */
+/** Auto-log threshold: max/min across all group values. */
 const LOG_RATIO = 200;
-/** Максимум символов подписи группы — дальше многоточие. */
+/** Max group label characters — ellipsis beyond this. */
 const LABEL_MAX = 17;
 
-/** Компактная подпись тика: 50, 500, 5k, 50k, 1.2M (как в ScatterCard). */
+/** Compact tick label: 50, 500, 5k, 50k, 1.2M (like ScatterCard). */
 function fmtCompact(v: number): string {
   const a = Math.abs(v);
   if (a >= 1e6) return `${+(v / 1e6).toFixed(a >= 1e7 ? 0 : 1)}M`;
@@ -35,7 +34,7 @@ function fmtCompact(v: number): string {
   return String(+v.toFixed(2));
 }
 
-/** «Красивый» шаг оси: 1/2/5 × 10^n. */
+/** "Nice" axis step: 1/2/5 × 10^n. */
 function niceStep(rough: number): number {
   const pow = 10 ** Math.floor(Math.log10(Math.max(rough, 1e-9)));
   const unit = rough / pow;
@@ -52,7 +51,7 @@ type Axis = {
   ticks: { v: number; label: string }[];
 };
 
-/** Ось значений: линейная или log10 (реальные подписи тиков). */
+/** Value axis: linear or log10 (real tick labels). */
 function buildAxis(lo: number, hi: number, useLog: boolean): Axis {
   const pxMin = M.left;
   const pxMax = VB_W - M.right;
@@ -146,7 +145,7 @@ export function BoxplotCard({
         role="img"
         aria-label={spec.title}
       >
-        {/* Вертикальная сетка значений */}
+        {/* Vertical value grid */}
         {axis.ticks.map((tick) => (
           <g key={tick.v}>
             <line
@@ -169,7 +168,7 @@ export function BoxplotCard({
           </g>
         ))}
 
-        {/* Боксы групп */}
+        {/* Group boxes */}
         {spec.groups.map((g, i) => {
           const y = rowY(i);
           const cy = y + ROW_H / 2;
@@ -191,11 +190,11 @@ export function BoxplotCard({
                   fillOpacity={0.55}
                 />
               )}
-              {/* Ус lo..hi с концевыми рисками */}
+              {/* Whisker lo..hi with end caps */}
               <line x1={xLo} x2={xHi} y1={cy} y2={cy} stroke="var(--muted)" strokeWidth={1} />
               <line x1={xLo} x2={xLo} y1={cy - 5} y2={cy + 5} stroke="var(--muted)" strokeWidth={1} />
               <line x1={xHi} x2={xHi} y1={cy - 5} y2={cy + 5} stroke="var(--muted)" strokeWidth={1} />
-              {/* Бокс q1..q3 */}
+              {/* Box q1..q3 */}
               <rect
                 x={xQ1}
                 y={cy - BOX_H / 2}
@@ -207,7 +206,7 @@ export function BoxplotCard({
                 stroke="var(--viz-series-1)"
                 strokeWidth={1}
               />
-              {/* Медиана — главная риска */}
+              {/* Median — primary tick */}
               <line
                 x1={xMed}
                 x2={xMed}
@@ -216,7 +215,7 @@ export function BoxplotCard({
                 stroke="var(--accent)"
                 strokeWidth={2}
               />
-              {/* Подпись группы */}
+              {/* Group label */}
               <text
                 x={M.left - 10}
                 y={cy + 3.5}
@@ -226,7 +225,7 @@ export function BoxplotCard({
               >
                 {truncateLabel(g.label)}
               </text>
-              {/* Хит-таргет — вся строка группы */}
+              {/* Hit target — entire group row */}
               <rect
                 x={0}
                 y={y}
@@ -257,7 +256,7 @@ export function BoxplotCard({
           );
         })}
 
-        {/* Подпись оси значений */}
+        {/* Value axis label */}
         {spec.valueLabel && (
           <text
             x={M.left + (VB_W - M.left - M.right) / 2}
@@ -272,7 +271,7 @@ export function BoxplotCard({
           </text>
         )}
 
-        {/* Пометка лог-шкалы, когда подписи оси нет */}
+        {/* Log scale note when axis label is absent */}
         {!spec.valueLabel && layout.useLog && (
           <text
             x={VB_W - M.right}
@@ -287,7 +286,7 @@ export function BoxplotCard({
         )}
       </svg>
 
-      {/* Тултип: медиана — главное, квантили — вторичные */}
+      {/* Tooltip: median — primary, quantiles — secondary */}
       {hover !== null && hovered && (
         <div
           className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-background px-2.5 py-1.5 shadow-lg"

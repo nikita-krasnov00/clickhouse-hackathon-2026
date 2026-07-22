@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * ViewSpecCard (C3) — диспетчер рендера view-spec.
+ * ViewSpecCard (C3) — view-spec render dispatcher.
  *
- * Принимает произвольный спек (выход LLM!), валидирует его схемой контрактов
- * `viewSpecSchema` и рендерит компонент по kind через реестр. Неизвестный или
- * сломанный спек → фоллбек-карточка с деталями, никогда не падение ленты.
+ * Accepts an arbitrary spec (LLM output!), validates it with the contracts
+ * schema `viewSpecSchema` and renders a component by kind via the registry.
+ * Unknown or broken spec → fallback card with details, never a feed crash.
  *
- * Обёртка-карточка едина для всех видов: kind-бейдж, заголовок, рамка,
- * тёмная тема. onClickContext прокидывается в кликабельные компоненты,
- * которые собирают ClickContext строго по семантике ClickTarget (см. click.ts).
+ * Card wrapper is shared for all kinds: kind badge, title, border, dark theme.
+ * onClickContext is forwarded to clickable components that build ClickContext
+ * strictly per ClickTarget semantics (see click.ts).
  */
 import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
@@ -38,9 +38,9 @@ type CommonProps = {
 };
 
 /**
- * Наружу ViewSpecCard отдаёт клик вместе с провалидированным спеком (C6):
- * обработчику ленты спек нужен для человекочитаемого заголовка follow-up
- * вопроса и доступа к clicks-декларации.
+ * ViewSpecCard exposes click together with the validated spec (C6):
+ * the feed handler needs the spec for a human-readable follow-up question title
+ * and access to the clicks declaration.
  */
 export type SpecClickHandler = (ctx: ClickContext, spec: ViewSpec) => void;
 
@@ -48,7 +48,7 @@ type RendererProps<K extends ViewKind> = CommonProps & {
   spec: Extract<ViewSpec, { kind: K }>;
 };
 
-/** Реестр kind → рендерер. `satisfies` гарантирует полноту по всем видам. */
+/** kind → renderer registry. `satisfies` guarantees completeness for all kinds. */
 const RENDERERS = {
   timeline: (p: RendererProps<"timeline">) => <TimelineCard {...p} />,
   leaderboard: (p: RendererProps<"leaderboard">) => <LeaderboardCard {...p} />,
@@ -65,8 +65,8 @@ const RENDERERS = {
 } satisfies { [K in ViewKind]: (p: RendererProps<K>) => ReactNode };
 
 function renderByKind(spec: ViewSpec, common: CommonProps): ReactNode {
-  // Единственный каст: TS не выводит корреляцию spec.kind ↔ RENDERERS[kind],
-  // реестр же типизирован точно через `satisfies`.
+  // Sole cast: TS doesn't infer spec.kind ↔ RENDERERS[kind] correlation,
+  // but the registry is typed precisely via `satisfies`.
   const render = RENDERERS[spec.kind] as (
     p: CommonProps & { spec: ViewSpec },
   ) => ReactNode;
@@ -74,9 +74,9 @@ function renderByKind(spec: ViewSpec, common: CommonProps): ReactNode {
 }
 
 /**
- * Общая рамка карточки: kind-бейдж + title + опциональный акцент. Экспортится
- * для BoardGrid (C2) — скелеты board_planned используют ровно ту же рамку,
- * чтобы гидратация в готовую ViewSpecCard не «прыгала» по вёрстке.
+ * Shared card frame: kind badge + title + optional accent. Exported for
+ * BoardGrid (C2) — board_planned skeletons use exactly the same frame so
+ * hydration into a ready ViewSpecCard doesn't "jump" in layout.
  */
 export function CardShell({
   kind,
@@ -106,7 +106,7 @@ export function CardShell({
   );
 }
 
-/** Фоллбек: спек не прошёл валидацию контрактом. */
+/** Fallback: spec failed contract validation. */
 function FallbackCard({ spec, error }: { spec: unknown; error: string }) {
   const t = useTranslations("cards");
   const kind =
@@ -137,8 +137,8 @@ function FallbackCard({ spec, error }: { spec: unknown; error: string }) {
 }
 
 /**
- * Сноска аннотации под чартом: вывод по фактическим цифрам (annotateCard) и
- * объяснение метрики. Рендерится в общей обёртке — одинаково у всех видов.
+ * Annotation footnote under the chart: insight from actual numbers (annotateCard)
+ * and metric explanation. Rendered in the shared wrapper — same for all kinds.
  */
 function CardInsight({ insight, metricNote }: { insight?: string; metricNote?: string }) {
   const t = useTranslations("cards");
